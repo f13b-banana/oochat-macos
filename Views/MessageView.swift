@@ -119,10 +119,16 @@ struct MessageView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer(minLength: 0)
+            } else if let exec = message.execResult {
+                ExecResultCard(result: exec, fontSize: fontSize)
+                    .padding(.leading, agentAvatarSize + messageSpacing)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 0)
             } else {
                 Spacer()
                 Text(message.content)
                     .font(.system(size: fontSize - 2))
+
                     .foregroundColor(.secondary)
                     .padding(8)
                     .background(Capsule().fill(Color.secondary.opacity(0.1)))
@@ -235,6 +241,82 @@ struct MessageView: View {
             return ""
         case .error:
             return "Not delivered"
+        }
+    }
+}
+
+/// Display card for `/exec`; the tool, what was asked, whether it worked, and the host's text.
+/// Green for success and red for failure. Refused tool reads as a result, not as a broken chat.
+private struct ExecResultCard: View {
+    let result: ChatExecResult
+    let fontSize: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: symbolName)
+                    .foregroundStyle(tint)
+                Text(result.tool)
+                    .font(AppTypography.mono(size: fontSize - 1).bold())
+                if !result.arguments.isEmpty {
+                    Text(result.arguments)
+                        .font(AppTypography.mono(size: fontSize - 2))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 8)
+                Text(statusText)
+                    .font(.system(size: AppFontSize.footnote, weight: .medium))
+                    .foregroundStyle(tint)
+            }
+            if result.outcome != .running {
+                Text(result.output)
+                    .font(AppTypography.mono(size: fontSize - 1))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(10)
+        .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(tint.opacity(0.35))
+        )
+        .accessibilityElement(children: .combine)
+    }
+
+    private var tint: Color {
+        switch result.outcome {
+        case .running:
+            return .secondary
+        case .success:
+            return AppPalette.success
+        case .failure:
+            return AppPalette.error
+        }
+    }
+
+    private var symbolName: String {
+        switch result.outcome {
+        case .running:
+            return "clock"
+        case .success:
+            return "checkmark.circle.fill"
+        case .failure:
+            return "xmark.octagon.fill"
+        }
+    }
+
+    private var statusText: String {
+        let duration = result.durationMS.map { " \u{00B7} \($0) ms" } ?? ""
+        switch result.outcome {
+        case .running:
+            return "Running\u{2026}"
+        case .success:
+            return "Completed" + duration
+        case .failure:
+            return "Failed" + duration
         }
     }
 }
