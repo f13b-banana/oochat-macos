@@ -354,6 +354,13 @@ final class ConnectOnionRemoteAgentTests: XCTestCase {
                 error: .server("Server rejected the request"),
                 description: "Server rejected the request",
                 isRetryable: false
+            ),
+            .init(
+                error: .incompatibleProtocol(
+                    OIPHandshake.Incompatibility(neededVersion: "0.2", appVersion: "0.1")
+                ),
+                description: "This agent needs OIP 0.2. This app speaks OIP 0.1. Update the app to connect.",
+                isRetryable: false
             )
         ]
 

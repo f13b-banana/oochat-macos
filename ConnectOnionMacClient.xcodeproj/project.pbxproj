@@ -37,7 +37,9 @@
 		BB0000013000000000000001 /* WalletServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000023000000000000002 /* WalletServiceTests.swift */; };
 		CC0000013000000000000001 /* ConnectOnionRemoteAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000023000000000000002 /* ConnectOnionRemoteAgent.swift */; };
 		CC0000033000000000000003 /* ConnectOnionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000043000000000000004 /* ConnectOnionServiceTests.swift */; };
+		D3B60E343084E8850012C501 /* IncompatibleAgentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3B60E333084E87D0012C501 /* IncompatibleAgentView.swift */; };
 		D3F3173A30789DC3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F3173930789DB3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift */; };
+		D3F3173C3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F3173B3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift */; };
 		DD0000013000000000000001 /* ViewModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000023000000000000002 /* ViewModelsTests.swift */; };
 		EE0000013000000000000001 /* ChatViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000023000000000000002 /* ChatViewTests.swift */; };
 		F00000013000000000000001 /* Resources/Fonts in Resources */ = {isa = PBXBuildFile; fileRef = F00000023000000000000002 /* Resources/Fonts */; };
@@ -127,7 +129,9 @@
 		BB0000043000000000000004 /* ConnectOnionMacClientTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ConnectOnionMacClientTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC0000023000000000000002 /* ConnectOnionRemoteAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionRemoteAgent.swift; sourceTree = "<group>"; };
 		CC0000043000000000000004 /* ConnectOnionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionServiceTests.swift; sourceTree = "<group>"; };
+		D3B60E333084E87D0012C501 /* IncompatibleAgentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncompatibleAgentView.swift; sourceTree = "<group>"; };
 		D3F3173930789DB3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectOnionIdentityStore+PrivateKeyStoring.swift"; sourceTree = "<group>"; };
+		D3F3173B3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionConnectAdoptionTests.swift; sourceTree = "<group>"; };
 		DD0000023000000000000002 /* ViewModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelsTests.swift; sourceTree = "<group>"; };
 		EE0000023000000000000002 /* ChatViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewTests.swift; sourceTree = "<group>"; };
 		F00000023000000000000002 /* Resources/Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/Fonts; sourceTree = "<group>"; };
@@ -244,6 +248,7 @@
 		34A6162E2FEBF5F6009B8B1C /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				D3B60E333084E87D0012C501 /* IncompatibleAgentView.swift */,
 				34EE29EF2FF546D1006464EB /* BalanceView.swift */,
 				34E0FED12FF3936100E36B46 /* SettingsView.swift */,
 				34A6162A2FEBF5F6009B8B1C /* AgentSettingsView.swift */,
@@ -277,6 +282,7 @@
 		BB0000063000000000000006 /* ConnectOnionMacClientTests */ = {
 			isa = PBXGroup;
 			children = (
+				D3F3173B3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift */,
 				CC0000043000000000000004 /* ConnectOnionServiceTests.swift */,
 				BB0000023000000000000002 /* WalletServiceTests.swift */,
 				DD0000023000000000000002 /* ViewModelsTests.swift */,
@@ -472,6 +478,7 @@
 				KD0000000000000000000001 /* ConnectOnionProtocolTypes.swift in Sources */,
 				KD0100000000000000000001 /* ConnectOnionEndpointResolver.swift in Sources */,
 				KD0200000000000000000001 /* ConnectOnionHistoryClient.swift in Sources */,
+				D3B60E343084E8850012C501 /* IncompatibleAgentView.swift in Sources */,
 				KD0300000000000000000001 /* ConnectOnionIdentityStore.swift in Sources */,
 				KD0400000000000000000001 /* ConnectOnionRemoteSessionStore.swift in Sources */,
 				KD0500000000000000000001 /* ConnectOnionEventDecoding.swift in Sources */,
@@ -512,6 +519,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CC0000033000000000000003 /* ConnectOnionServiceTests.swift in Sources */,
+				D3F3173C3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift in Sources */,
 				BB0000013000000000000001 /* WalletServiceTests.swift in Sources */,
 				DD0000013000000000000001 /* ViewModelsTests.swift in Sources */,
 				EE0000013000000000000001 /* ChatViewTests.swift in Sources */,
