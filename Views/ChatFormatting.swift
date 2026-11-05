@@ -2,7 +2,7 @@ import SwiftUI
 
 enum ChatViewPresentation {
     static func hasStartedConversation(_ messages: [ChatMessage]) -> Bool {
-        messages.contains { $0.role != .system }
+        messages.contains { $0.role != .system || $0.execResult != nil }
     }
 
     static func lastUserMessageID(in messages: [ChatMessage]) -> UUID? {
