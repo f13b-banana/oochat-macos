@@ -337,6 +337,88 @@ actor ConnectOnionRemoteAgentClient {
         }
     }
 
+    private static let execTimeout: TimeInterval = 30
+
+    /// Runs tool on the host without the LLM (EXEC) and returns the host's EXEC_RESULT.
+    ///
+    /// It uses its own short-lived socket so a slow, failed or refused EXEC cannot disturb a running turn
+    /// or what the next launch recovers.
+    /// Failed tools return `isSuccess == false`. This throws only when
+    /// the round trip itself cannot finish (handshake refused, socket lost, no reply in time).
+    func runExec(
+        execID: String,
+        tool: String,
+        args: [String: JSONValue]
+    ) async throws -> OIPExecResult {
+        let target = try await probe()
+        let task = webSocketFactory(target.webSocketURL)
+        defer { task.cancel(with: .normalClosure, reason: nil) }
+        task.resume()
+
+        let builder = OIPClientFrames(keyStore: identityStore, to: target.agentAddress)
+        try await sendFrame(
+            try builder.connect(direct: target.isDirect, sessionID: nil, session: nil, lastMessageID: nil),
+            over: task
+        )
+        try await waitForExecHandshake(over: task)
+        try await sendFrame(try builder.exec(execID: execID, tool: tool, args: args), over: task)
+        return try await waitForExecResult(execID: execID, over: task)
+    }
+
+    private func waitForExecHandshake(over task: any ConnectOnionWebSocketTasking) async throws {
+        while true {
+            let data = try await receiveFrameData(from: task, timeout: 30)
+            let step: OIPHandshake.Step
+            do {
+                step = try OIPHandshake.interpret(data)
+            } catch {
+                throw ConnectOnionRemoteError.invalidProtocolMessage
+            }
+            switch step {
+            case .established:
+                return
+            case .reply(let frame):
+                try await sendFrame(frame, over: task)
+            case .incompatible(let incompatibility):
+                throw ConnectOnionRemoteError.incompatibleProtocol(incompatibility)
+            case .rejected(let message):
+                throw ConnectOnionRemoteError.server(message)
+            case .onboardRequired:
+                throw ConnectOnionRemoteError.server("This agent needs onboarding first. Send it a message to finish it.")
+            case .onboardSucceeded, .ignore:
+                continue
+            }
+        }
+    }
+
+    /// Reads until the EXEC_RESULT with this exec_id. Other results and unknown frames are skipped.
+    private func waitForExecResult(
+        execID: String,
+        over task: any ConnectOnionWebSocketTasking
+    ) async throws -> OIPExecResult {
+        let deadline = Date().addingTimeInterval(Self.execTimeout)
+        while true {
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else {
+                throw ConnectOnionRemoteError.timedOut
+            }
+            let data = try await receiveFrameData(from: task, timeout: UInt64(remaining.rounded(.up)))
+            guard let fields = try? JSONDecoder().decode([String: JSONValue].self, from: data) else {
+                continue
+            }
+            switch OIPServerFrame.decode(fields) {
+            case .execResult(let result) where result.execID == execID:
+                return result
+            case .ping:
+                try await sendFrame(OIPClientFrames.pong(), over: task)
+            case .error(let error):
+                throw ConnectOnionRemoteError.server(error.message ?? "The agent refused the request")
+            default:
+                continue
+            }
+        }
+    }
+
     func disconnect() {
         cancelRequested = true
         interruptRequested = false
@@ -1683,6 +1765,11 @@ nonisolated protocol ConnectOnionRemoteAgentProviding: AnyObject, Sendable {
         onUpdate: @escaping ConnectOnionRemoteAgentClient.UpdateHandler,
         onEvent: @escaping ConnectOnionRemoteAgentClient.EventHandler
     ) async
+    func runExec(
+        execID: String,
+        tool: String,
+        args: [String: JSONValue]
+    ) async throws -> OIPExecResult
     func disconnect() async
 }
 

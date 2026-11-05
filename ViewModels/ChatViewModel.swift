@@ -432,6 +432,11 @@ extension ChatViewModel {
         let trimmedInput = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedInput.isEmpty || !pendingAttachments.isEmpty else { return }
 
+        // Run if EXEC command and return early
+        if pendingAttachments.isEmpty, runExecIfCommand(trimmedInput) {
+            return
+        }
+
         if let validationError = attachmentValidationError {
             attachmentError = validationError
             return
@@ -452,6 +457,77 @@ extension ChatViewModel {
                 : inputText,
             clearsComposer: true
         )
+    }
+
+    /// `/exec <tool> [name=value ...]` runs one tool on the host directly with no LLM.
+    /// It skips `submitRequest`, so it adds no user message, run or retry entry, and nothing returned
+    /// reaches `handleIncomingEvent` (error case fails whole chat).
+    /// Returns true when the text was an /exec command, usable or not.
+    private func runExecIfCommand(_ text: String) -> Bool {
+        switch OIPExecCommand.parse(text) {
+        case .notACommand:
+            return false
+        case .invalid(let message):
+            inputText = ""
+            appendExecCard(
+                ChatExecResult(
+                    execID: UUID().uuidString,
+                    tool: OIPExecCommand.prefix,
+                    arguments: "",
+                    outcome: .failure,
+                    output: message,
+                    durationMS: nil
+                )
+            )
+        case .command(let command):
+            inputText = ""
+            startExec(command)
+        }
+        return true
+    }
+
+    // Run tool, show 'Running' card, receive result, update card with results
+    private func startExec(_ command: OIPExecCommand) {
+        let execID = UUID().uuidString
+        let running = ChatExecResult.running(command, execID: execID)
+        let cardID = appendExecCard(running)
+        Task { [weak self] in
+            guard let self else { return }
+            let finished: ChatExecResult
+            do {
+                let reply = try await service.runExec(
+                    execID: execID,
+                    command: command,
+                    using: configuration
+                )
+                finished = running.finished(with: reply)
+            } catch {
+                finished = running.failed(error.localizedDescription)
+            }
+            finishExecCard(cardID, with: finished)
+        }
+    }
+
+    // Wraps EXEC result in a `ChatMessage`
+    @discardableResult
+    private func appendExecCard(_ result: ChatExecResult) -> UUID {
+        let card = ChatMessage(
+            sessionId: session.id,
+            role: .system,
+            content: result.output,
+            execResult: result
+        )
+        messages.append(card)
+        appViewModel.addMessage(card)
+        return card.id
+    }
+
+    // Lookup card by ID, replace content with finished EXEC result
+    private func finishExecCard(_ cardID: UUID, with result: ChatExecResult) {
+        guard var card = messages.first(where: { $0.id == cardID }) else { return }
+        card.execResult = result
+        card.content = result.output
+        appViewModel.replaceMessage(card)
     }
 
     func canRetryAgentMessage(_ agentMessage: ChatMessage) -> Bool {

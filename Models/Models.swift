@@ -97,6 +97,7 @@ nonisolated struct ChatMessage: Identifiable, Codable, Hashable {
     var replyToMessageID: UUID?
     var artifacts: [GeneratedArtifactReference]?
     var artifactWarnings: [String]?
+    var execResult: ChatExecResult?
 }
 
 /// Token, cost and context figures reported by the host for one agent turn.
@@ -104,6 +105,54 @@ nonisolated struct ChatUsageSummary: Codable, Hashable, Sendable {
     var tokenCount: Int
     var totalCost: Double
     var contextPercent: Double
+}
+
+/// What one `/exec` asked for and how it ended. Persisted with its card.
+nonisolated struct ChatExecResult: Codable, Hashable, Sendable {
+    enum Outcome: String, Codable, Sendable {
+        case running
+        case success
+        case failure
+    }
+
+    var execID: String
+    var tool: String
+    /// What was asked, as `name=value` pairs.
+    var arguments: String
+    var outcome: Outcome
+    /// The tool's output on success, the reason on failure. Empty while running.
+    var output: String
+    var durationMS: Int?
+}
+
+extension ChatExecResult {
+    static func running(_ command: OIPExecCommand, execID: String) -> ChatExecResult {
+        ChatExecResult(
+            execID: execID,
+            tool: command.tool,
+            arguments: command.argumentSummary,
+            outcome: .running,
+            output: "",
+            durationMS: nil
+        )
+    }
+
+    /// The host answered. A status other than success is a failure, with reason.
+    func finished(with reply: OIPExecResult) -> ChatExecResult {
+        var copy = self
+        copy.outcome = reply.isSuccess ? .success : .failure
+        copy.output = reply.displayText
+        copy.durationMS = reply.durationMS
+        return copy
+    }
+
+    /// No answer arrived (socket lost, timeout, refused handshake).
+    func failed(_ message: String) -> ChatExecResult {
+        var copy = self
+        copy.outcome = .failure
+        copy.output = message
+        return copy
+    }
 }
 
 /// Lifecycle of an `ExecutionRun`.
