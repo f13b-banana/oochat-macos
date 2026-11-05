@@ -24,7 +24,6 @@ actor ConnectOnionRemoteAgentClient {
     private var webSocketTask: (any ConnectOnionWebSocketTasking)?
     private var pendingRuntimeInputs: [ConnectOnionPendingRuntimeInput] = []
     private var pendingRuntimeMessageIDs: [UUID] = []
-    private var seenEventIDs: Set<String> = []
     private var seenArtifactIDs: Set<String> = []
     private var isAwaitingOnboarding = false
     private var cancelRequested = false
@@ -36,6 +35,7 @@ actor ConnectOnionRemoteAgentClient {
     private var pendingApprovalRequestID: String?
     private var isSending = false
     private var liveLLMModelsByID: [String: String] = [:]
+    private var eventLedger = EventLedger()
 
     init(
         configuredTarget: String,
@@ -348,23 +348,27 @@ extension ConnectOnionRemoteAgentClient {
     ) async throws -> String {
         var lastError: Error?
 
-        for attempt in 0..<4 {
+        let policy = ReconnectPolicy()
+
+        var state = reduce(.idle, .open, maxAttempts: policy.maxAttempts)
+
+        while case .connecting(let attempt) = state {
             if cancelRequested {
                 throw interruptEscalated
                     ? ConnectOnionRemoteError.interrupted
                     : ConnectOnionRemoteError.cancelled
             }
+
             do {
                 if attempt > 0 {
                     await onUpdate(
                         ConnectOnionTransportUpdate(
                             status: "Reconnecting",
-                            detail: "Attempt \(attempt + 1) of 4",
+                            detail: "Attempt \(attempt + 1) of \(policy.maxAttempts)",
                             isLive: false
                         )
                     )
-                    let delay = UInt64(1 << (attempt - 1)) * 1_000_000_000
-                    try await sleep(delay)
+                    try await sleep(UInt64(policy.delay(for: attempt) * 1_000_000_000))
                 }
 
                 return try await runConnection(
@@ -377,6 +381,7 @@ extension ConnectOnionRemoteAgentClient {
             } catch {
                 lastError = error
                 closeSocket()
+                state = reduce(state, .socketClosed, maxAttempts: policy.maxAttempts)
             }
         }
 
@@ -536,12 +541,16 @@ extension ConnectOnionRemoteAgentClient {
         guard let eventID = event["id"] as? String else {
             return true
         }
+
         let dedupeKey = Self.eventDedupeKey(for: event, id: eventID)
-        guard seenEventIDs.insert(dedupeKey).inserted else {
+
+        guard eventLedger.record(eventID: dedupeKey) else {
             return false
         }
+
         sessionState.lastMessageID = eventID
         sessionStore.save(sessionState)
+
         return true
     }
 
