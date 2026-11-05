@@ -1,3 +1,4 @@
+import ConnectOnionKit
 import Foundation
 
 /// How a saved configuration reaches its agent. Only `byAddress` is live; the
@@ -96,6 +97,7 @@ nonisolated struct ChatMessage: Identifiable, Codable, Hashable {
     var replyToMessageID: UUID?
     var artifacts: [GeneratedArtifactReference]?
     var artifactWarnings: [String]?
+    var execResult: ChatExecResult?
 }
 
 /// Token, cost and context figures reported by the host for one agent turn.
@@ -103,6 +105,54 @@ nonisolated struct ChatUsageSummary: Codable, Hashable, Sendable {
     var tokenCount: Int
     var totalCost: Double
     var contextPercent: Double
+}
+
+/// What one `/exec` asked for and how it ended. Persisted with its card.
+nonisolated struct ChatExecResult: Codable, Hashable, Sendable {
+    enum Outcome: String, Codable, Sendable {
+        case running
+        case success
+        case failure
+    }
+
+    var execID: String
+    var tool: String
+    /// What was asked, as `name=value` pairs.
+    var arguments: String
+    var outcome: Outcome
+    /// The tool's output on success, the reason on failure. Empty while running.
+    var output: String
+    var durationMS: Int?
+}
+
+extension ChatExecResult {
+    static func running(_ command: OIPExecCommand, execID: String) -> ChatExecResult {
+        ChatExecResult(
+            execID: execID,
+            tool: command.tool,
+            arguments: command.argumentSummary,
+            outcome: .running,
+            output: "",
+            durationMS: nil
+        )
+    }
+
+    /// The host answered. A status other than success is a failure, with reason.
+    func finished(with reply: OIPExecResult) -> ChatExecResult {
+        var copy = self
+        copy.outcome = reply.isSuccess ? .success : .failure
+        copy.output = reply.displayText
+        copy.durationMS = reply.durationMS
+        return copy
+    }
+
+    /// No answer arrived (socket lost, timeout, refused handshake).
+    func failed(_ message: String) -> ChatExecResult {
+        var copy = self
+        copy.outcome = .failure
+        copy.output = message
+        return copy
+    }
 }
 
 /// Lifecycle of an `ExecutionRun`.
@@ -289,58 +339,6 @@ nonisolated struct EvalExecutionItem: Identifiable, Codable, Hashable, Sendable 
 nonisolated enum EvalStatus: String, Codable, Hashable, Sendable {
     case evaluating
     case done
-}
-
-/// A schema-free JSON value, used for tool arguments whose shape depends on
-/// the tool. Decoding probes concrete types in order and fails rather than
-/// silently dropping an unsupported value.
-nonisolated enum JSONValue: Codable, Hashable, Sendable {
-    case string(String)
-    case number(Double)
-    case bool(Bool)
-    case object([String: JSONValue])
-    case array([JSONValue])
-    case null
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            self = .null
-        } else if let value = try? container.decode(Bool.self) {
-            self = .bool(value)
-        } else if let value = try? container.decode(Double.self) {
-            self = .number(value)
-        } else if let value = try? container.decode(String.self) {
-            self = .string(value)
-        } else if let value = try? container.decode([JSONValue].self) {
-            self = .array(value)
-        } else if let value = try? container.decode([String: JSONValue].self) {
-            self = .object(value)
-        } else {
-            throw DecodingError.dataCorruptedError(
-                in: container,
-                debugDescription: "Unsupported JSON value"
-            )
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .string(let value):
-            try container.encode(value)
-        case .number(let value):
-            try container.encode(value)
-        case .bool(let value):
-            try container.encode(value)
-        case .object(let value):
-            try container.encode(value)
-        case .array(let value):
-            try container.encode(value)
-        case .null:
-            try container.encodeNil()
-        }
-    }
 }
 
 extension ExecutionItem {
