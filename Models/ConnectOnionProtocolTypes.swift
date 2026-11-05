@@ -220,17 +220,17 @@ nonisolated enum AgentExecutionMode: String, Codable, CaseIterable, Hashable, Se
 
     var displayName: String {
         switch self {
-        case .safe: return "safe"
-        case .plan: return "plan"
-        case .accept: return "accept"
+        case .safe: return "Auto"
+        case .plan: return "Read only"
+        case .accept: return "Full access"
         }
     }
 
     var helpText: String {
         switch self {
-        case .safe: return "Dangerous tools require approval"
-        case .plan: return "Read-only exploration followed by a plan review"
-        case .accept: return "Skip all tool approvals for up to 10 turns"
+        case .safe: return "Review each action and approve safe work automatically."
+        case .plan: return "Ask before any change."
+        case .accept: return "Bypass approval for the bounded user-driven turns shown."
         }
     }
 
@@ -244,9 +244,9 @@ nonisolated enum AgentExecutionMode: String, Codable, CaseIterable, Hashable, Se
 
     var confirmationText: String {
         switch self {
-        case .safe: return "Safe mode enabled"
-        case .plan: return "Plan mode enabled"
-        case .accept: return "Accept enabled for up to 10 turns"
+        case .safe: return "Auto enabled"
+        case .plan: return "Read only enabled"
+        case .accept: return "Full access enabled"
         }
     }
 }
@@ -356,7 +356,8 @@ nonisolated enum ConnectOnionTransportEvent: Sendable {
     case approvalRequired(ConnectOnionApprovalRequest)
     case onboardingRequired(ConnectOnionOnboardingRequest)
     case onboardingSucceeded(String)
-    case modeChanged(AgentExecutionMode)
+    case modeChanged(AgentExecutionMode, turnsLeft: Int? = nil)
+    case sessionModes(available: [AgentExecutionMode], current: AgentExecutionMode?, turnsLeft: Int?)
     case planReviewRequired(ConnectOnionPlanReviewRequest)
     case ulwCheckpointRequired(ConnectOnionULWCheckpointRequest)
     case recoveryState(String)

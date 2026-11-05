@@ -161,6 +161,40 @@ extension ConnectOnionRemoteAgentTests {
         }
         XCTAssertEqual(counter.sockets, 1)
     }
+
+    // 16.2: the host's modes and turns_left reach the app.
+    func testSessionModesAndTurnsLeftReachTheApp() async throws {
+        let conversationID = UUID()
+        let storageKey = "connectonion.remote-session.\(conversationID.uuidString)"
+        defer { UserDefaults.standard.removeObject(forKey: storageKey) }
+        let socket = try ScriptedWebSocketTask(events: [
+            [
+                "type": "CONNECTED",
+                "status": "new",
+                "session_id": "session-1",
+                "protocol": ["name": "oip", "version": "0.1", "min_version": "0.1", "max_version": "0.1"],
+                "session_modes": [
+                    "currentModeId": "auto",
+                    "turnsLeft": NSNull(),
+                    "availableModes": [["id": "read-only"], ["id": "auto"]]
+                ]
+            ],
+            ["type": "mode_changed", "mode": "full-access", "turns_left": 5],
+            ["type": "OUTPUT", "result": "done", "session": ["trace": []]]
+        ])
+        let client = makeClient(conversationID: conversationID, socket: socket, counter: AttemptCounter())
+        let recorder = RemoteProtocolRecorder()
+
+        _ = try await client.send(
+            prompt: "Run the task",
+            onUpdate: { _ in },
+            onEvent: { await recorder.record($0) }
+        )
+
+        let events = await recorder.snapshot().events
+        XCTAssertTrue(events.contains("modes:plan,safe:safe"), "\(events)")
+        XCTAssertTrue(events.contains("mode:ulw:5"), "\(events)")
+    }
 }
 
 // 15.2: EXEC runs on its own short-lived socket. Reuses `makeClient` and `AttemptCounter` above.

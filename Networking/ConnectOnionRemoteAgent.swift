@@ -916,7 +916,7 @@ extension ConnectOnionRemoteAgentClient {
         sessionState.desiredMode = mode
         sessionState.confirmedMode = mode
         sessionStore.save(sessionState)
-        await onEvent(.modeChanged(mode))
+        await onEvent(.modeChanged(mode, turnsLeft: Self.intValue(event["turns_left"])))
     }
 
     private func handlePlanReview(
@@ -1033,6 +1033,17 @@ extension ConnectOnionRemoteAgentClient {
             switch step {
             case .established(let connected):
                 adopt(connected)
+                if let modes = connected.sessionModes {
+                    await onEvent(
+                        .sessionModes(
+                            available: modes.availableModes.compactMap {
+                                AgentExecutionMode(permissionMode: $0.id)
+                            },
+                            current: modes.currentMode.flatMap(AgentExecutionMode.init(permissionMode:)),
+                            turnsLeft: modes.turnsLeft
+                        )
+                    )
+                }
                 return connected
 
             case .reply(let frame):

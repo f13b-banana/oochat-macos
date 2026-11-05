@@ -344,7 +344,15 @@ struct ChatView: View {
                         if viewModel.isExecutionModeChangePending {
                             ProgressView()
                                 .controlSize(.mini)
+                            Text("\(viewModel.desiredExecutionMode.displayName) pending")
+                                .font(.system(size: AppFontSize.caption))
+                                .foregroundStyle(.secondary)
                                 .help("Waiting for the hosted agent to confirm the mode")
+                        } else if let turnsLeft = viewModel.acceptTurnsLeft {
+                            Text("\(turnsLeft) \(turnsLeft == 1 ? "turn" : "turns") left")
+                                .font(.system(size: AppFontSize.caption, weight: .medium))
+                                .foregroundStyle(AppPalette.error)
+                                .help("Accept mode ends after these turns")
                         }
                         ExecutionModeSelector(viewModel: viewModel)
                     }

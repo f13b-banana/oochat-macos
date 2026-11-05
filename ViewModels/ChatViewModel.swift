@@ -208,6 +208,9 @@ class ChatViewModel: ObservableObject {
         case .modeChanged:
             interactionError = nil
 
+        case .sessionModes:
+            break
+
         case .planReviewRequired(let request):
             pendingInteraction = .planReview(request)
             interactionError = nil
@@ -709,10 +712,20 @@ extension ChatViewModel {
     var confirmedExecutionMode: AgentExecutionMode {
         service.confirmedExecutionMode
     }
-
+    /// Pending until mode_changed arrives. When idle the request rides the next INPUT
     var isExecutionModeChangePending: Bool {
-        service.isAgentRequestActive
-            && service.desiredExecutionMode != service.confirmedExecutionMode
+        service.desiredExecutionMode != service.confirmedExecutionMode
+    }
+
+    /// Accept (full-access) only when the host lists it; the host rejects it with -32602 otherwise
+    var offeredExecutionModes: [AgentExecutionMode] {
+        AgentExecutionMode.allCases.filter {
+            $0 != .accept || service.availableExecutionModes.contains(.accept)
+        }
+    }
+
+    var acceptTurnsLeft: Int? {
+        service.confirmedExecutionMode == .accept ? service.acceptTurnsLeft : nil
     }
 
     var canChangeExecutionMode: Bool {

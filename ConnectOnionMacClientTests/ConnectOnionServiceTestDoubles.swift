@@ -40,17 +40,21 @@ actor StubRemoteAgentClient: ConnectOnionRemoteAgentProviding {
     private var desiredMode: AgentExecutionMode = .safe
     private var confirmedMode: AgentExecutionMode = .safe
     let emitsApprovalOnSend: Bool
+    /// Sent after the stub's own events on each send.
+    let eventsOnSend: [ConnectOnionTransportEvent]
 
     init(
         endpoint: ConnectOnionResolvedEndpoint,
         pendingExecution: Bool = false,
         failures: Set<StubRemoteOperation> = [],
-        emitsApprovalOnSend: Bool = false
+        emitsApprovalOnSend: Bool = false,
+        eventsOnSend: [ConnectOnionTransportEvent] = []
     ) async {
         self.endpoint = endpoint
         self.pendingExecution = pendingExecution
         self.failures = failures
         self.emitsApprovalOnSend = emitsApprovalOnSend
+        self.eventsOnSend = eventsOnSend
     }
 
     func probe() async throws -> ConnectOnionResolvedEndpoint {
@@ -113,6 +117,9 @@ actor StubRemoteAgentClient: ConnectOnionRemoteAgentProviding {
             )
         }
         await onEvent(.modeChanged(.accept))
+        for event in eventsOnSend {
+            await onEvent(event)
+        }
         return "stub response"
     }
 
