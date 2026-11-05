@@ -30,3 +30,4 @@ ConnectOnionMacClient.xcodeproj/project.xcworkspace/xcuserdata/
 
 # Xcode per-user state
 xcuserdata/
+.build/
