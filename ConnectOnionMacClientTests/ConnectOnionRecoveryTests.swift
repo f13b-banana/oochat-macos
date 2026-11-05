@@ -1,6 +1,8 @@
 import CryptoKit
 import Foundation
 import XCTest
+import ConnectOnionKit
+
 @testable import ConnectOnionMacClient
 
 extension ConnectOnionRemoteAgentTests {
@@ -254,14 +256,70 @@ extension ConnectOnionRemoteAgentTests {
         let key = try Curve25519.Signing.PrivateKey(
             rawRepresentation: privateKeyData
         )
-        let canonicalPayload = try JSONSerialization.data(
-            withJSONObject: payload,
-            options: [.sortedKeys]
-        )
+        // let canonicalPayload = try JSONSerialization.data(
+        //     withJSONObject: payload,
+        //     options: [.sortedKeys]
+        // )
+
+        let canonicalPayload = CanonicalJSON.data(from: payload.mapValues { JSONValue(any: $0) })
         XCTAssertTrue(
             key.publicKey.isValidSignature(signature, for: canonicalPayload),
             file: file,
             line: line
         )
+    }
+
+    func testRelaunchedClientResumesTheSameSessionWithItsLastMessageID() async throws {
+        let address = makeAddress("93")
+        let conversationID = UUID()
+        let storageKey = "connectonion.remote-session.\(conversationID.uuidString)"
+        defer { UserDefaults.standard.removeObject(forKey: storageKey) }
+        // What the first launch left behind before it was killed.
+        UserDefaults.standard.set(
+            try makeJSONData([
+                "sessionID": "relaunch-session",
+                "lastMessageID": "evt-41",
+                "executionState": "idle",
+                "inputWasSent": false
+            ]),
+            forKey: storageKey
+        )
+
+        let resolver = makeResolver { request in
+            (
+                makeHTTPResponse(for: request, statusCode: 200),
+                try makeJSONData(["name": "Relaunch Agent", "address": address])
+            )
+        }
+
+        let socket = try ScriptedWebSocketTask(events: [
+            [
+                "type": "CONNECTED",
+                "status": "connected",
+                "session_id": "relaunch-session"
+            ],
+            ["type": "OUTPUT", "result": "picked up where we left off"]
+        ])
+
+        let client = ConnectOnionRemoteAgentClient(
+            configuredTarget: "https://agent.test",
+            conversationID: conversationID,
+            resolver: resolver,
+            identityStore: makeEphemeralIdentityStore(),
+            webSocketFactory: { _ in socket },
+            sleep: { _ in }
+        )
+
+        let output = try await client.send(
+            prompt: "Continue",
+            onUpdate: { _ in },
+            onEvent: { _ in }
+        )
+
+        XCTAssertEqual(output, "picked up where we left off")
+        let connect = try XCTUnwrap(try socket.sentJSONObjects().first)
+        XCTAssertEqual(connect["type"] as? String, "CONNECT")
+        XCTAssertEqual(connect["session_id"] as? String, "relaunch-session")
+        XCTAssertEqual(connect["last_msg_id"] as? String, "evt-41")
     }
 }
