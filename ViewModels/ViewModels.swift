@@ -515,8 +515,9 @@ class AppViewModel: ObservableObject {
            let decodedMessages = try? JSONDecoder().decode([ChatMessage].self, from: messageData) {
             messages = Self.collapsingIntermediateAgentMessages(
                 decodedMessages.filter { message in
-                    !(message.role == .system
-                        && message.content.hasPrefix("Connected to "))
+                    // Drop unfinished EXEC cards; nothing can resume them after a relaunch.
+                    !(message.role == .system && message.content.hasPrefix("Connected to "))
+                        && message.execResult?.outcome != .running
                 }
             )
         }
@@ -738,9 +739,15 @@ class AppViewModel: ObservableObject {
                 }
                 didChangeSessions = true
 
+                // Save and re-append EXEC cards that would otherwise be
+                // lost on transcript replacement (since non-message)
                 let localTranscript = updatedMessages.filter {
-                    $0.sessionId == existing.id
+                    $0.sessionId == existing.id && $0.execResult == nil
                 }
+                let execCards = updatedMessages.filter {
+                    $0.sessionId == existing.id && $0.execResult != nil
+                }
+
                 if Self.transcriptSignature(localTranscript)
                     == Self.transcriptSignature(projected) {
                     // Preserve native-only metadata such as usage, files,
@@ -758,6 +765,7 @@ class AppViewModel: ObservableObject {
                     message.sessionId = existing.id
                     return message
                 })
+                updatedMessages.append(contentsOf: execCards)
                 didChangeMessages = true
             } else {
                 let session = ChatSession(
@@ -775,7 +783,6 @@ class AppViewModel: ObservableObject {
                 didChangeMessages = true
             }
         }
-
         if didChangeSessions {
             sessions = updatedSessions.sorted { $0.updatedAt > $1.updatedAt }
         }
@@ -984,6 +991,14 @@ extension AppViewModel {
             guard !content.isEmpty else { return nil }
             return "\(message.role.rawValue)\u{0}\(content)"
         }
+    }
+
+    /// Swaps in a new version of a message with the same id; the saved transcript follows.
+    func replaceMessage(_ message: ChatMessage) {
+        guard let index = messages.firstIndex(where: { $0.id == message.id }) else {
+            return
+        }
+        messages[index] = message
     }
 }
 

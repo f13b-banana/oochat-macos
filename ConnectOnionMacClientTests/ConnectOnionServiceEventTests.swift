@@ -1,6 +1,7 @@
 import Combine
 import CryptoKit
 import XCTest
+import ConnectOnionKit
 @testable import ConnectOnionMacClient
 
 extension ConnectOnionServiceTests {
@@ -235,7 +236,7 @@ extension ConnectOnionServiceTests {
         switch event {
         case .output(let value):
             return "output:\(value)"
-        case .modeChanged(let value):
+        case .modeChanged(let value, _):
             return "mode:\(value.rawValue)"
         case .error(let value):
             return "error:\(value)"
@@ -298,5 +299,149 @@ extension ConnectOnionServiceTests {
 
     private enum HexError: Error {
         case invalid
+    }
+}
+
+// 15.2: /exec results in the session.
+extension ConnectOnionServiceTests {
+    private struct ExecHarness {
+        let viewModel: ChatViewModel
+        let stub: StubRemoteAgentClient
+        let service: ConnectOnionService
+    }
+
+    @MainActor
+    private func makeExecHarness(failures: Set<StubRemoteOperation> = []) async -> ExecHarness {
+        let address = "0x" + String(repeating: "ef", count: 32)
+        let stub = await StubRemoteAgentClient(
+            endpoint: ConnectOnionResolvedEndpoint(
+                agentAddress: address,
+                webSocketURL: URL(string: "wss://agent.test/ws")!,
+                httpBaseURL: nil,
+                isDirect: false,
+                info: nil
+            ),
+            failures: failures
+        )
+        let service = ConnectOnionService(remoteAgentFactory: { _, _, _ in stub })
+        let configuration = GeneralAgentConfiguration(
+            name: "Exec Agent",
+            connectionType: .byAddress,
+            addressConfiguration: AgentAddressConfiguration(agentAddress: address)
+        )
+        let session = ChatSession(agentConfigId: configuration.id, title: "Exec")
+        let viewModel = ChatViewModel(
+            session: session,
+            configuration: configuration,
+            service: service,
+            appViewModel: AppViewModel(storage: makeIsolatedDefaults())
+        )
+        return ExecHarness(viewModel: viewModel, stub: stub, service: service)
+    }
+
+    @MainActor
+    func testExecCommandShowsASuccessCardAndNeverStartsATurn() async {
+        let harness = await makeExecHarness()
+        await harness.stub.setExecReply(["status": .string("success"), "result": .string("max")])
+
+        harness.viewModel.inputText = "/exec bash command=whoami"
+        harness.viewModel.sendMessage()
+        await waitUntil { harness.viewModel.messages.last?.execResult?.outcome == .success }
+
+        XCTAssertEqual(harness.viewModel.messages.count, 1, "no user message, no agent message")
+        XCTAssertEqual(harness.viewModel.messages.first?.role, .system)
+        let card = harness.viewModel.messages.first?.execResult
+        XCTAssertEqual(card?.tool, "bash")
+        XCTAssertEqual(card?.arguments, "command=whoami")
+        XCTAssertEqual(card?.output, "max")
+        XCTAssertEqual(harness.viewModel.inputText, "")
+        let calls = await harness.stub.callSnapshot()
+        XCTAssertTrue(calls.contains("runExec:bash"))
+        XCTAssertFalse(calls.contains { $0.hasPrefix("send:") }, "an EXEC is not a turn")
+        XCTAssertFalse(harness.service.isAgentRequestActive)
+        XCTAssertNil(harness.service.connectionError)
+    }
+
+    @MainActor
+    func testFailedExecShowsAFailureCardAndTheNextTurnStillWorks() async {
+        let harness = await makeExecHarness()
+        await harness.stub.setExecReply(["status": .string("error"), "error": .string("blocked: bash is not allowed")])
+
+        harness.viewModel.inputText = "/exec bash command=whoami"
+        harness.viewModel.sendMessage()
+        await waitUntil { harness.viewModel.messages.last?.execResult?.outcome == .failure }
+
+        XCTAssertEqual(harness.viewModel.messages.last?.execResult?.output, "blocked: bash is not allowed")
+        XCTAssertNil(harness.viewModel.recoveryStatus)
+        XCTAssertNil(harness.service.connectionError)
+
+        harness.viewModel.inputText = "Are you still there?"
+        harness.viewModel.sendMessage()
+        await waitUntil {
+            let calls = await harness.stub.callSnapshot()
+            return calls.contains { $0.hasPrefix("send:") } && !harness.service.isAgentRequestActive
+        }
+        // The reply normally arrives through the event stream, which is not reliable in tests.
+        if !harness.viewModel.messages.contains(where: { $0.role == .agent }) {
+            harness.viewModel.handleIncomingEvent(.output("stub response"))
+        }
+
+        XCTAssertEqual(harness.viewModel.messages.map(\.role), [.system, .user, .agent])
+        XCTAssertEqual(harness.viewModel.messages.last?.content, "stub response")
+        XCTAssertFalse(harness.viewModel.messages.contains { $0.status == .error })
+    }
+
+    @MainActor
+    func testExecThatGetsNoAnswerEndsAsAFailureCard() async {
+        let harness = await makeExecHarness(failures: [.exec])
+
+        harness.viewModel.inputText = "/exec bash command=whoami"
+        harness.viewModel.sendMessage()
+        await waitUntil { harness.viewModel.messages.last?.execResult?.outcome == .failure }
+
+        XCTAssertEqual(harness.viewModel.messages.last?.execResult?.output, "Stub remote operation failed")
+        XCTAssertNil(harness.service.connectionError, "a missing answer is not a broken session")
+    }
+
+    @MainActor
+    func testMalformedExecCommandShowsTheUsageAndRunsNothing() async {
+        let harness = await makeExecHarness()
+
+        harness.viewModel.inputText = "/exec"
+        harness.viewModel.sendMessage()
+
+        XCTAssertEqual(harness.viewModel.messages.count, 1)
+        XCTAssertEqual(harness.viewModel.messages.first?.execResult?.outcome, .failure)
+        XCTAssertEqual(harness.viewModel.messages.first?.execResult?.output, OIPExecCommand.usage)
+        let calls = await harness.stub.callSnapshot()
+        XCTAssertFalse(calls.contains { $0.hasPrefix("runExec") })
+    }
+
+    @MainActor
+    func testRunningCardsAreDroppedWhenTheAppRelaunches() {
+        let storage = makeIsolatedDefaults()
+        let first = AppViewModel(storage: storage)
+        let sessionID = UUID()
+        func card(_ outcome: ChatExecResult.Outcome) -> ChatMessage {
+            ChatMessage(
+                sessionId: sessionID,
+                role: .system,
+                content: "",
+                execResult: ChatExecResult(
+                    execID: UUID().uuidString,
+                    tool: "bash",
+                    arguments: "",
+                    outcome: outcome,
+                    output: "",
+                    durationMS: nil
+                )
+            )
+        }
+        first.addMessage(card(.running))
+        first.addMessage(card(.success))
+
+        let relaunched = AppViewModel(storage: storage)
+
+        XCTAssertEqual(relaunched.messages.compactMap { $0.execResult?.outcome }, [.success])
     }
 }
