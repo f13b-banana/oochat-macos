@@ -200,6 +200,24 @@ nonisolated enum AgentExecutionMode: String, Codable, CaseIterable, Hashable, Se
 
     static let acceptTurns = 10
 
+    /// The host's mode matching the execution mode. Safe maps to auto (agent asks before tool use),
+    /// Plan to read-only, Accept to full-access (run without asking for set turns)
+    var permissionMode: OIPPermissionMode {
+        switch self {
+        case .safe: return .auto
+        case .plan: return .readOnly
+        case .accept: return .fullAccess
+        }
+    }
+
+    // Convert host mode to corresponding app mode (reverse conversion)
+    init?(permissionMode: OIPPermissionMode) {
+        guard let mode = Self.allCases.first(where: { $0.permissionMode == permissionMode }) else {
+            return nil
+        }
+        self = mode
+    }
+
     var displayName: String {
         switch self {
         case .safe: return "safe"
