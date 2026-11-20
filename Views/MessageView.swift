@@ -17,8 +17,14 @@ struct MessageView: View {
     var failure: ChatFailure?
     var canRetryFailedMessage = false
     var onRetryFailedMessage: () -> Void = {}
+    /// Your latest sent message can be edited in place; Send has the agent answer it again.
+    var canEdit = false
+    var onEdit: (String) -> Void = { _ in }
 
     @State private var isHovered = false
+    // The text being edited in place; nil while the bubble shows the sent message.
+    @State private var editDraft: String?
+    @FocusState private var isEditorFocused: Bool
     @State private var didCopy = false
     @State private var copyResetToken = UUID()
     @State private var hoverLingerToken = UUID()
@@ -51,16 +57,26 @@ struct MessageView: View {
                             }
                         }
 
-                        Text(message.content)
-                            .font(AppTypography.mono(size: fontSize))
-                            .lineSpacing(3)
-                            .textSelection(.enabled)
+                        if editDraft != nil {
+                            messageEditor
+                        } else {
+                            Text(message.content)
+                                .font(AppTypography.mono(size: fontSize))
+                                .lineSpacing(3)
+                                .textSelection(.enabled)
+                        }
                     }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .background(AppPalette.surfaceMuted)
                         .foregroundColor(.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay {
+                            if editDraft != nil {
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .stroke(OOColor.primary, lineWidth: 1.5)
+                            }
+                        }
                         .frame(maxWidth: .infinity, alignment: .trailing)
 
                     if message.status == .error {
@@ -71,7 +87,9 @@ struct MessageView: View {
                             .foregroundColor(message.status == .error ? AppPalette.error : .secondary)
                     }
 
-                    if !message.content.isEmpty {
+                    if editDraft != nil {
+                        editorButtons
+                    } else if !message.content.isEmpty {
                         messageActions
                     }
                 }
@@ -166,7 +184,24 @@ struct MessageView: View {
             .accessibilityLabel(didCopy ? "Copied" : "Copy message")
             .help(didCopy ? "Copied" : "Copy message")
 
-            if message.role == .agent {
+            if message.role == .user && canEdit {
+                Button {
+                    editDraft = message.content
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: AppFontSize.footnote, weight: .medium))
+                        .foregroundStyle(Color.secondary)
+                        .frame(minWidth: 28, minHeight: 28)
+                        .padding(.horizontal, 6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Edit message")
+                .help("Edit and send again")
+            }
+
+            // Only the latest reply can be retried, so the button only shows there.
+            if message.role == .agent && canRetry {
                 Button(action: onRetry) {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.clockwise")
@@ -184,10 +219,8 @@ struct MessageView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(!canRetry)
-                .opacity(canRetry ? 1 : 0.35)
                 .accessibilityLabel("Retry message")
-                .help(canRetry ? "Retry" : "Retry unavailable")
+                .help("Retry: the agent answers your message again")
             }
         }
         // adjust row container to account for larger UI buttons.
@@ -195,6 +228,50 @@ struct MessageView: View {
         .opacity(isHovered || didCopy ? 1 : 0)
         .animation(.easeInOut(duration: 0.12), value: isHovered)
         .onHover(perform: updateHover)
+    }
+
+    /// Your message, editable where it sits. Return sends, Escape cancels.
+    private var messageEditor: some View {
+        TextField(
+            "Message",
+            text: Binding(get: { editDraft ?? "" }, set: { editDraft = $0 }),
+            axis: .vertical
+        )
+        .textFieldStyle(.plain)
+        .font(AppTypography.mono(size: fontSize))
+        .lineSpacing(3)
+        .lineLimit(1...12)
+        .focused($isEditorFocused)
+        .onSubmit(sendEdit)
+        .onExitCommand { editDraft = nil }
+        .onAppear { isEditorFocused = true }
+    }
+
+    private var editorButtons: some View {
+        HStack(spacing: 8) {
+            Button("Cancel") {
+                editDraft = nil
+            }
+            .buttonStyle(InlineEditButtonStyle(isPrimary: false))
+            Button("Send", action: sendEdit)
+                .buttonStyle(InlineEditButtonStyle(isPrimary: true))
+                .disabled(!canSendEdit)
+        }
+        .fixedSize()
+    }
+
+    private var trimmedEdit: String {
+        (editDraft ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSendEdit: Bool {
+        !trimmedEdit.isEmpty && trimmedEdit != message.content
+    }
+
+    private func sendEdit() {
+        guard canSendEdit else { return }
+        onEdit(trimmedEdit)
+        editDraft = nil
     }
 
     /// macOS hover tracking flickers when the cursor crosses child views
@@ -278,3 +355,29 @@ struct MessageView: View {
 }
 
 /// Presents an Agent-generated file without granting the container host access.
+
+/// Cancel and Send under a message being edited. The Kit's OO styles keep a 44pt touch height;
+/// a pointer control inline with a message reads better at 28pt, the same as the hover actions.
+private struct InlineEditButtonStyle: ButtonStyle {
+    let isPrimary: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: OORadius.medium, style: .continuous)
+        let fill = isPrimary ? OOColor.primary : OOColor.paper
+        let ink = isPrimary ? OOColor.onPrimary : OOColor.ink
+        configuration.label
+            .font(.subheadline.weight(isPrimary ? .semibold : .medium))
+            .foregroundStyle(isEnabled ? ink : OOColor.inkTertiary)
+            .padding(.horizontal, OOSpace.medium)
+            .frame(height: 28)
+            .background(isEnabled ? fill : OOColor.hover, in: shape)
+            .overlay {
+                if !isPrimary {
+                    shape.stroke(OOColor.hairline, lineWidth: 1)
+                }
+            }
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .contentShape(Rectangle())
+    }
+}

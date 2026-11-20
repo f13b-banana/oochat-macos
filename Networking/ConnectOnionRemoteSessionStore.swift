@@ -1,3 +1,4 @@
+import ConnectOnionKit
 import Foundation
 
 /// Where the active request stands; persisted so a relaunch knows whether
@@ -64,6 +65,22 @@ nonisolated struct ConnectOnionRemoteSessionState: Codable {
             AgentExecutionMode.self,
             forKey: .confirmedMode
         ) ?? .safe
+    }
+}
+
+extension ConnectOnionRemoteSessionState {
+    /// Cuts the saved session back to before your latest message (see `SessionRewind`). Every send
+    /// opens a new socket with this copy in CONNECT, so the next send redoes that turn. False when
+    /// there is no saved session or no message of yours in it.
+    mutating func rewindLatestTurn(prompt: String?, now: Date = Date()) -> Bool {
+        guard let data = sessionData,
+              case .object(let session)? = try? JSONDecoder().decode(JSONValue.self, from: data),
+              let rewound = SessionRewind.droppingLatestTurn(from: session, prompt: prompt, now: now),
+              let encoded = try? JSONEncoder().encode(JSONValue.object(rewound)) else {
+            return false
+        }
+        sessionData = encoded
+        return true
     }
 }
 

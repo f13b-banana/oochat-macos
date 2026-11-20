@@ -22,6 +22,12 @@ struct ChatView: View {
     @State private var isKeyboardNavigatingSkills = false
     /// The Work Room shown in place of the chat, by id, so every render reads the live room.
     @State private var openWorkRoomID: String?
+    /// Whether you're at (or near) the bottom. Scrolled up, new messages don't pull you down.
+    @State private var isAtBottom = true
+    /// About 1.5 windows above the newest message; only then does Jump to latest show.
+    @State private var isFarFromLatest = false
+    /// Something new arrived while you were scrolled up; shown as a dot on Jump to latest.
+    @State private var hasUnseenLatest = false
 
     private let minChatFontSize: Double = 12
     private let maxChatFontSize: Double = 26
@@ -475,6 +481,10 @@ struct ChatView: View {
                                     canRetryFailedMessage: viewModel.canRetryFailedMessage(message),
                                     onRetryFailedMessage: {
                                         viewModel.retryFailedMessage(message)
+                                    },
+                                    canEdit: viewModel.canEditMessage(message),
+                                    onEdit: { text in
+                                        viewModel.editLatestMessage(message, to: text)
                                     }
                                 )
                                     .id(message.id)
@@ -536,6 +546,22 @@ struct ChatView: View {
                         .environment(\.toolAwaitingApprovalID, viewModel.toolAwaitingApprovalID)
                     }
                     .scrollContentBackground(.hidden)
+                    .onScrollGeometryChange(for: ChatScrollPosition.self) { geometry in
+                        ChatScrollPosition(geometry)
+                    } action: { _, position in
+                        isAtBottom = position.isAtBottom
+                        isFarFromLatest = position.isFarFromLatest
+                        if position.isAtBottom {
+                            hasUnseenLatest = false
+                        }
+                    }
+                    .overlay(alignment: .bottom) {
+                        JumpToLatestButton(isShown: isFarFromLatest, hasUnseenLatest: hasUnseenLatest) {
+                            withAnimation {
+                                proxy.scrollTo("bottomOfChat", anchor: .bottom)
+                            }
+                        }
+                    }
                     .onAppear {
                         scrollToLastUserMessage(using: proxy)
                     }
@@ -543,6 +569,14 @@ struct ChatView: View {
                         scrollToLastUserMessage(using: proxy)
                     }
                     .onChange(of: viewModel.messages.count) {
+                        // Scrolled up, nothing pulls you down, not even your own message. Only the
+                        // agent's reply lights the dot on Jump to latest.
+                        guard isAtBottom else {
+                            if viewModel.messages.last?.role == .agent {
+                                hasUnseenLatest = true
+                            }
+                            return
+                        }
                         withAnimation {
                             proxy.scrollTo("bottomOfChat", anchor: .bottom)
                         }
@@ -893,52 +927,6 @@ struct ChatView: View {
             : "Start voice input"
     }
 
-    /// The chat's status under the composer, in the same words and colours as iOS.
-    /// Ticks once a second only while connecting, to turn into "Can't connect" at 10 s.
-    private var connectionStatusChip: some View {
-        TimelineView(.periodic(from: .now, by: connectingSince == nil ? 3_600 : 1)) { context in
-            statusChip(
-                viewModel.connectionStatus(
-                    connectingFor: connectingSince.map { context.date.timeIntervalSince($0) } ?? 0
-                )
-            )
-        }
-        .onChange(of: viewModel.isConnecting, initial: true) { _, isConnecting in
-            connectingSince = isConnecting ? (connectingSince ?? .now) : nil
-        }
-    }
-
-    @ViewBuilder
-    private func statusChip(_ status: ChatConnectionStatus) -> some View {
-        let detail = status.detail(agentName: viewModel.configuration.name)
-        let mark = HStack(spacing: 4) {
-            OOStatusDot(label: status.label, tone: status.tone)
-            if status.canRetry {
-                Text("· Retry")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(OOColor.primary)
-            }
-        }
-        .animation(.easeInOut(duration: 0.15), value: status)
-
-        if status.canRetry {
-            Button {
-                viewModel.retryConnection()
-            } label: {
-                mark.contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(detail)
-            .accessibilityLabel(detail)
-            .accessibilityHint("Tries to connect again")
-        } else {
-            mark
-                .help(detail)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(detail)
-        }
-    }
-
     private func increaseFontSize() {
         chatFontSize = min(chatFontSize + chatFontStep, maxChatFontSize)
     }
@@ -1040,6 +1028,70 @@ enum ControlCenterPaneWidth {
     }
 }
 
+/// Where the chat is scrolled, read from the scroll view itself.
+struct ChatScrollPosition: Equatable {
+    /// Within this of the bottom, new messages keep you at the bottom.
+    static let followThreshold: CGFloat = 80
+    /// Jump to latest shows once you're this many windows up, as on iOS.
+    static let jumpToLatestScreens: CGFloat = 1.5
+
+    let isAtBottom: Bool
+    let isFarFromLatest: Bool
+
+    init(_ geometry: ScrollGeometry) {
+        self.init(
+            contentHeight: geometry.contentSize.height,
+            visibleBottom: geometry.visibleRect.maxY,
+            viewportHeight: geometry.containerSize.height
+        )
+    }
+
+    /// The same, from plain numbers, so it can be tested without a scroll view.
+    init(contentHeight: CGFloat, visibleBottom: CGFloat, viewportHeight: CGFloat) {
+        let distance = contentHeight - visibleBottom
+        isAtBottom = distance <= Self.followThreshold
+        isFarFromLatest = distance > viewportHeight * Self.jumpToLatestScreens
+    }
+}
+
+/// Shown while you're well up the chat; brings you back to the newest message (also ⌘↓).
+private struct JumpToLatestButton: View {
+    let isShown: Bool
+    let hasUnseenLatest: Bool
+    let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            if isShown {
+                Button(action: action) {
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(OOColor.ink)
+                        .frame(width: 32, height: 32)
+                        .background(OOColor.paper, in: Circle())
+                        .overlay(Circle().stroke(OOColor.hairline, lineWidth: 1))
+                        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                        .overlay(alignment: .topTrailing) {
+                            if hasUnseenLatest {
+                                Circle()
+                                    .fill(OOColor.primary)
+                                    .frame(width: 8, height: 8)
+                            }
+                        }
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Jump to latest (⌘↓)")
+                .accessibilityLabel(hasUnseenLatest ? "Jump to latest, new messages" : "Jump to latest")
+                .padding(.bottom, 12)
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.8).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: isShown)
+    }
+}
+
 /// The Station pane's single field while the host asks for onboarding. The same code is the invite code and,
 /// once connected, the pairing code.
 private struct StationInviteCodeView: View {
@@ -1106,5 +1158,54 @@ extension ChatView {
         }
         .toolbarBackground(AppPalette.toolbarSurface, for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
+    }
+}
+
+/// The connection status under the composer. Kept out of the struct body (type length).
+extension ChatView {
+    /// The chat's status under the composer, in the same words and colours as iOS.
+    /// Ticks once a second only while connecting, to turn into "Can't connect" at 10 s.
+    private var connectionStatusChip: some View {
+        TimelineView(.periodic(from: .now, by: connectingSince == nil ? 3_600 : 1)) { context in
+            statusChip(
+                viewModel.connectionStatus(
+                    connectingFor: connectingSince.map { context.date.timeIntervalSince($0) } ?? 0
+                )
+            )
+        }
+        .onChange(of: viewModel.isConnecting, initial: true) { _, isConnecting in
+            connectingSince = isConnecting ? (connectingSince ?? .now) : nil
+        }
+    }
+
+    @ViewBuilder
+    private func statusChip(_ status: ChatConnectionStatus) -> some View {
+        let detail = status.detail(agentName: viewModel.configuration.name)
+        let mark = HStack(spacing: 4) {
+            OOStatusDot(label: status.label, tone: status.tone)
+            if status.canRetry {
+                Text("· Retry")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(OOColor.primary)
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: status)
+
+        if status.canRetry {
+            Button {
+                viewModel.retryConnection()
+            } label: {
+                mark.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(detail)
+            .accessibilityLabel(detail)
+            .accessibilityHint("Tries to connect again")
+        } else {
+            mark
+                .help(detail)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(detail)
+        }
     }
 }

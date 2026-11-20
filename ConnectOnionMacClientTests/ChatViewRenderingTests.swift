@@ -456,4 +456,18 @@ extension ChatViewTests {
         XCTAssertEqual(result.map(\.id), [visible.id])
     }
 
+    // Within 80 pt of the bottom new messages keep you there; 1.5 windows up, Jump to latest shows.
+    func testChatScrollPositionFollowsNearTheBottomAndOffersJumpWellUp() {
+        let atBottom = ChatScrollPosition(contentHeight: 2_000, visibleBottom: 1_950, viewportHeight: 600)
+        XCTAssertTrue(atBottom.isAtBottom)
+        XCTAssertFalse(atBottom.isFarFromLatest)
+
+        let justUp = ChatScrollPosition(contentHeight: 2_000, visibleBottom: 1_800, viewportHeight: 600)
+        XCTAssertFalse(justUp.isAtBottom)
+        XCTAssertFalse(justUp.isFarFromLatest, "200 pt up is less than 1.5 windows")
+
+        let wellUp = ChatScrollPosition(contentHeight: 3_000, visibleBottom: 1_000, viewportHeight: 600)
+        XCTAssertFalse(wellUp.isAtBottom)
+        XCTAssertTrue(wellUp.isFarFromLatest)
+    }
 }

@@ -341,6 +341,15 @@ final class ConnectOnionService: ObservableObject {
         }
     }
 
+    /// Cuts the agent's saved session back to before your latest message, so the next send
+    /// redoes that turn. False while a run is going or when there is nothing to rewind.
+    func rewindLatestTurn(prompt: String) async -> Bool {
+        guard !isAgentRequestActive, let remoteAgentClient else {
+            return false
+        }
+        return await remoteAgentClient.rewindLatestTurn(prompt: prompt)
+    }
+
     /// Asks the agent to stop after it finishes the current step; returns false
     /// when nothing is running or the stop request itself failed.
     func interruptCurrentRequest() async -> Bool {
