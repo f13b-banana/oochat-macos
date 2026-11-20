@@ -30,6 +30,8 @@ class ChatViewModel: ObservableObject {
     /// Set after an interrupt so every trailing event from that cancelled run
     /// is discarded instead of reaching the transcript.
     @Published private(set) var isDiscardingInterruptedEvents = false
+    /// This conversation's Work Rooms, fed every decoded provider frame.
+    let workRooms: WorkRoomStore
 
     let session: ChatSession
     private let initialConfiguration: GeneralAgentConfiguration
@@ -57,6 +59,7 @@ class ChatViewModel: ObservableObject {
         self.initialConfiguration = configuration
         self.service = service
         self.appViewModel = appViewModel
+        workRooms = appViewModel.workRoomStore(for: session.id)
 
         messages = appViewModel.findMessages(for: session.id)
         executionItems = appViewModel.findExecutionItems(for: session.id)
@@ -124,6 +127,12 @@ class ChatViewModel: ObservableObject {
     }
 
     func handleIncomingEvent(_ event: ConnectOnionTransportEvent) {
+        // Revision-gated Work Room state, not transcript output: a Provider's
+        // terminal update must still land while an interrupted run is discarded.
+        if case .workRoomFrame(let frame) = event {
+            workRooms.receive(frame)
+            return
+        }
         if isDiscardingInterruptedEvents {
             return
         }
@@ -247,6 +256,9 @@ class ChatViewModel: ObservableObject {
             if self.dashboard != dashboard {
                 self.dashboard = dashboard
             }
+
+        case .workRoomFrame:
+            break  // Fed to the Work Room store above.
 
         case .incompatible(let incompatibility):
             pendingUsage = nil

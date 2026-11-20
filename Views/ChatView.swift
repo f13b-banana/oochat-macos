@@ -18,6 +18,8 @@ struct ChatView: View {
     @FocusState private var isInputFocused: Bool
     @State private var selectedSkillIndex = 0
     @State private var isKeyboardNavigatingSkills = false
+    /// The Work Room shown in place of the chat, by id, so every render reads the live room.
+    @State private var openWorkRoomID: String?
 
     private let minChatFontSize: Double = 12
     private let maxChatFontSize: Double = 26
@@ -38,6 +40,34 @@ struct ChatView: View {
     }
 
     var body: some View {
+        if let openWorkRoomID, let workRoom = viewModel.workRooms.workRoom(id: openWorkRoomID) {
+            workRoomDetail(workRoom)
+        } else {
+            chatDetail
+        }
+    }
+
+    /// The Work Room takes the whole detail pane. The Control Center pane and its toggle are not
+    /// drawn here, and their saved state is not touched, so Back restores them exactly.
+    private func workRoomDetail(_ workRoom: WorkRoom) -> some View {
+        OOWorkRoomView(workRoom: workRoom)
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        openWorkRoomID = nil
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .help("Back to the chat")
+                    .keyboardShortcut("[", modifiers: .command)
+                }
+            }
+            .toolbarBackground(AppPalette.toolbarSurface, for: .windowToolbar)
+            .toolbarBackground(.visible, for: .windowToolbar)
+    }
+
+    private var chatDetail: some View {
         HStack(spacing: 0) {
             chatColumn
 
@@ -423,7 +453,9 @@ struct ChatView: View {
                                     ExecutionFlowView(
                                         run: run,
                                         messageFontSize: chatFontSize,
-                                        conversationWidth: conversationWidth
+                                        conversationWidth: conversationWidth,
+                                        workRooms: viewModel.workRooms,
+                                        onOpenWorkRoom: { openWorkRoomID = $0 }
                                     )
                                         .id(run.id)
                                 }
@@ -433,7 +465,9 @@ struct ChatView: View {
                                 ExecutionFlowView(
                                     run: run,
                                     messageFontSize: chatFontSize,
-                                    conversationWidth: conversationWidth
+                                    conversationWidth: conversationWidth,
+                                    workRooms: viewModel.workRooms,
+                                    onOpenWorkRoom: { openWorkRoomID = $0 }
                                 )
                                     .id(run.id)
                             }

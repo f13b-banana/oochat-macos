@@ -60,6 +60,8 @@ actor RemoteProtocolRecorder {
             events.append("dashboard_too_large:\(bytes)")
         case .agentProfile:
             events.append("agent_profile")
+        case .workRoomFrame:
+            events.append("work_room_frame")
         }
     }
 
