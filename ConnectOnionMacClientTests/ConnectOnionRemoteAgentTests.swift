@@ -102,20 +102,17 @@ final class ConnectOnionRemoteAgentTests: XCTestCase {
 
     func testExecutionModesAndInteractionDecisionsProduceProtocolPayloads() {
         XCTAssertEqual(AgentExecutionMode.allCases, [.safe, .plan, .accept])
-        XCTAssertEqual(AgentExecutionMode.safe.helpText, "Dangerous tools require approval")
-        XCTAssertEqual(
-            AgentExecutionMode.plan.helpText,
-            "Read-only exploration followed by a plan review"
-        )
-        XCTAssertTrue(AgentExecutionMode.accept.helpText.contains("10 turns"))
+        XCTAssertEqual(AgentExecutionMode.safe.helpText, "Review each action and approve safe work automatically.")
+        XCTAssertEqual(AgentExecutionMode.plan.helpText, "Ask before any change.")
+        XCTAssertTrue(AgentExecutionMode.accept.helpText.contains("turns shown"))
         XCTAssertEqual(AgentExecutionMode.safe.systemImage, "checkmark.shield.fill")
         XCTAssertEqual(AgentExecutionMode.plan.systemImage, "list.clipboard.fill")
         XCTAssertEqual(AgentExecutionMode.accept.systemImage, "bolt.shield.fill")
-        XCTAssertEqual(AgentExecutionMode.safe.confirmationText, "Safe mode enabled")
-        XCTAssertEqual(AgentExecutionMode.plan.confirmationText, "Plan mode enabled")
+        XCTAssertEqual(AgentExecutionMode.safe.confirmationText, "Auto enabled")
+        XCTAssertEqual(AgentExecutionMode.plan.confirmationText, "Read only enabled")
         XCTAssertEqual(
             AgentExecutionMode.accept.confirmationText,
-            "Accept enabled for up to 10 turns"
+            "Full access enabled"
         )
 
         let planApproval = ConnectOnionPlanReviewDecision.approve.message

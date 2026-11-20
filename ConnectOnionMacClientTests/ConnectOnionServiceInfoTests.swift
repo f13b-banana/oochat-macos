@@ -151,7 +151,7 @@ extension ConnectOnionServiceTests {
             XCTAssertEqual(AgentExecutionMode(permissionMode: mode.permissionMode), mode)
         }
         XCTAssertNil(AgentExecutionMode(permissionMode: .unknown("other")))
-        XCTAssertEqual(AgentExecutionMode.accept.displayName, "accept")
+        XCTAssertEqual(AgentExecutionMode.accept.displayName, "Full access")
     }
 
     func testExecutionRunShowsModelAndSynthesisForDirectAnswers() {
