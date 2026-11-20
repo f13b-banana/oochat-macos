@@ -288,4 +288,6 @@ nonisolated enum ConnectOnionTransportEvent: Sendable {
     case incompatible(OIPHandshake.Incompatibility)
     /// The newest DASHBOARD_SNAPSHOT
     case dashboard(OIPDashboard)
+    /// A decoded frame for the conversation's Work Room store (provider_invocation, provider_activity, provider_message).
+    case workRoomFrame(OIPServerFrame)
 }
