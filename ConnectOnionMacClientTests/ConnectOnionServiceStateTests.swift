@@ -19,7 +19,7 @@ extension ConnectOnionServiceTests {
 
             XCTAssertFalse(service.isConnected)
             XCTAssertNil(service.connectionError)
-            XCTAssertEqual(service.hostedAgentStatus, "Disconnected")
+            XCTAssertEqual(service.hostedAgentStatus, "Not Connected")
             XCTAssertNil(service.hostedAgentStatusDetail)
             XCTAssertFalse(service.isHostedAgentStatusLive)
             XCTAssertFalse(service.hostedFilesystemEnabled)

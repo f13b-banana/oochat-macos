@@ -79,6 +79,74 @@ actor ConnectOnionRemoteAgentClient {
         return resolved
     }
 
+    /// Opens a temporary authenticated connection to retrieve the agent's profile without sending an INPUT or starting an execution.
+    func loadAgentProfile(
+        onEvent: @escaping EventHandler
+    ) async throws {
+        let target = try await probe()
+        let task = webSocketFactory(target.webSocketURL)
+        defer {
+            task.cancel(with: .normalClosure, reason: nil)
+        }
+
+        task.resume()
+
+        try await sendFrame(
+            try connectFrame(for: target),
+            over: task
+        )
+
+        // An agent that still requires onboarding has no authenticated
+        // profile to show yet. Leave the public agent information in place.
+        guard try await waitForProfileHandshake(over: task) else {
+            return
+        }
+
+        // Per the protocol, AGENT_PROFILE is sent immediately after CONNECTED.
+        let event = try await receiveJSON(from: task, timeout: 10)
+        guard event["type"] as? String == "AGENT_PROFILE" else {
+            return
+        }
+
+        let fields = event.mapValues { JSONValue(any: $0) }
+        if case .agentProfile(let profile) = OIPServerFrame.decode(fields) {
+            await onEvent(.agentProfile(profile))
+        }
+    }
+
+    private func waitForProfileHandshake(
+        over task: any ConnectOnionWebSocketTasking
+    ) async throws -> Bool {
+        while true {
+            let data = try await receiveFrameData(from: task, timeout: 30)
+            let step: OIPHandshake.Step
+
+            do {
+                step = try OIPHandshake.interpret(data)
+            } catch {
+                throw ConnectOnionRemoteError.invalidProtocolMessage
+            }
+
+            switch step {
+            case .established(let connected):
+                adopt(connected)
+                return true
+
+            case .reply(let frame):
+                try await sendFrame(frame, over: task)
+
+            case .incompatible(let incompatibility):
+                throw ConnectOnionRemoteError.incompatibleProtocol(incompatibility)
+
+            case .rejected, .onboardRequired:
+                return false
+
+            case .onboardSucceeded, .ignore:
+                continue
+            }
+        }
+    }
+
     func hasPendingExecution() -> Bool {
         !sessionState.wasInterrupted
             && sessionState.executionState != .idle
@@ -674,6 +742,13 @@ extension ConnectOnionRemoteAgentClient {
 
         case "PING":
             try await sendFrame(OIPClientFrames.pong(), over: task)
+
+        case "AGENT_PROFILE":
+            let fields = event.mapValues { JSONValue(any: $0) }
+
+            if case .agentProfile(let profile) = OIPServerFrame.decode(fields) {
+                await onEvent(.agentProfile(profile))
+            }
 
         case "ERROR":
             try await handleServerError(event, onEvent: onEvent)
@@ -1747,6 +1822,9 @@ extension ConnectOnionRemoteAgentClient {
 /// transport for the real actor.
 nonisolated protocol ConnectOnionRemoteAgentProviding: AnyObject, Sendable {
     func probe() async throws -> ConnectOnionResolvedEndpoint
+    func loadAgentProfile(
+        onEvent: @escaping ConnectOnionRemoteAgentClient.EventHandler
+    ) async throws
     func hasPendingExecution() async -> Bool
     func executionModeSnapshot() async -> (
         desired: AgentExecutionMode,
@@ -1782,6 +1860,14 @@ nonisolated protocol ConnectOnionRemoteAgentProviding: AnyObject, Sendable {
         args: [String: JSONValue]
     ) async throws -> OIPExecResult
     func disconnect() async
+}
+
+extension ConnectOnionRemoteAgentProviding {
+    func loadAgentProfile(
+        onEvent: @escaping ConnectOnionRemoteAgentClient.EventHandler
+    ) async throws {
+        // Default no-op for injected test transports that don't load profiles.
+    }
 }
 
 /// The production client satisfies the facade without any adaptation.
