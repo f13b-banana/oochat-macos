@@ -291,3 +291,23 @@ nonisolated enum ConnectOnionTransportEvent: Sendable {
     /// A decoded frame for the conversation's Work Room store (provider_invocation, provider_activity, provider_message).
     case workRoomFrame(OIPServerFrame)
 }
+
+extension ConnectOnionRemoteError {
+    /// Transport events carry only an error's text, so match it back to the error it came from
+    /// and give it the plain words both apps share.
+    static func chatFailure(forDescription text: String) -> ChatFailure {
+        let known: [(ConnectOnionRemoteError, ChatFailure)] = [
+            (.agentOffline, .agentOffline),
+            (.agentNotFound, .agentNotFound),
+            (.connectionClosed, .connectionClosed),
+            (.timedOut, .timedOut),
+            (.requestInProgress, .busy),
+            (.recoveryUnavailable, .notRecovered)
+        ]
+        for (error, failure) in known where error.errorDescription == text {
+            return failure
+        }
+        // What the host itself said, such as "Agent not connected: 0x…".
+        return .server(text)
+    }
+}
