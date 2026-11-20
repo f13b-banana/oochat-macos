@@ -1,10 +1,23 @@
 import ConnectOnionKit
 import SwiftUI
 
+private struct ToolAwaitingApprovalKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    /// The tool the open approval card asks about. Its row shows Awaiting approval, not Running.
+    var toolAwaitingApprovalID: String? {
+        get { self[ToolAwaitingApprovalKey.self] }
+        set { self[ToolAwaitingApprovalKey.self] = newValue }
+    }
+}
+
 struct ExecutionItemRow: View {
     let item: ExecutionItem
     let messageFontSize: CGFloat
     let completionSummary: String?
+    @Environment(\.toolAwaitingApprovalID) private var awaitingApprovalID
     @State private var isExpanded: Bool
 
     init(
@@ -100,7 +113,8 @@ struct ExecutionItemRow: View {
            let diff = change.diff, !diff.isEmpty {
             FileChangeCard(
                 change: change,
-                status: toolCall.status,
+                state: rowState(toolCall),
+                toolName: toolCall.displayName,
                 timingMS: toolCall.timingMS
             )
         } else {
@@ -118,7 +132,7 @@ struct ExecutionItemRow: View {
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .frame(width: 12)
 
-                    toolStatusIcon(toolCall.status)
+                    ToolStatusMark(state: rowState(toolCall), toolName: toolCall.displayName)
 
                     Image(systemName: category.icon)
                         .font(.system(size: AppFontSize.body))
@@ -140,7 +154,7 @@ struct ExecutionItemRow: View {
 
                     Spacer(minLength: 16)
 
-                    Text(toolCall.statusLabel(timing: toolCall.timingMS.flatMap(visibleDuration)))
+                    Text(statusLabel(toolCall))
                         .font(AppTypography.mono(size: AppFontSize.footnote, weight: .medium))
                         .tracking(0.5)
                         .foregroundStyle(OOColor.inkSecondary)
@@ -160,17 +174,29 @@ struct ExecutionItemRow: View {
         }
     }
 
-    /// The kit's status mark: a waiting dot while the call runs, a check when it is done and
-    /// a cross when it failed.
-    @ViewBuilder
-    private func toolStatusIcon(_ status: ExecutionStatus) -> some View {
-        switch status {
-        case .running:
-            OOToolStatus(.running)
-        case .done:
-            OOToolStatus(.done)
-        case .error:
-            OOToolStatus(.failed)
+    private func rowState(_ toolCall: ToolCallExecutionItem) -> ToolRowState {
+        toolCall.status == .running && toolCall.id == awaitingApprovalID
+            ? .awaitingApproval
+            : toolCall.status.rowState
+    }
+
+    private func statusLabel(_ toolCall: ToolCallExecutionItem) -> String {
+        if rowState(toolCall) == .awaitingApproval {
+            return ToolRowState.awaitingApproval.label.uppercased()
+        }
+        return toolCall.statusLabel(timing: toolCall.timingMS.flatMap(visibleDuration))
+    }
+
+    /// Said in place of the body once a tool never ran to the end. The host's "User rejected…"
+    /// text for a skip is written for the agent, not you.
+    private func settledNote(_ toolCall: ToolCallExecutionItem) -> String? {
+        switch toolCall.status {
+        case .skipped:
+            return "You skipped this tool."
+        case .interrupted where (toolCall.result ?? "").isEmpty:
+            return "Stopped before it finished."
+        default:
+            return nil
         }
     }
 
@@ -181,7 +207,12 @@ struct ExecutionItemRow: View {
         _ toolCall: ToolCallExecutionItem,
         category: ToolCategory
     ) -> some View {
-        if category == .shell {
+        if let note = settledNote(toolCall) {
+            Text(note)
+                .font(.system(size: AppFontSize.footnote))
+                .foregroundStyle(OOColor.inkSecondary)
+                .padding(.leading, 22)
+        } else if category == .shell {
             terminalBlock(command: toolCall.shellCommand, output: toolCall.result)
         } else {
             VStack(alignment: .leading, spacing: 8) {
@@ -337,10 +368,14 @@ struct ExecutionItemRow: View {
 
     private func approvalRow(_ approval: ApprovalExecutionItem) -> some View {
         let approved = approval.decision.isApproved
-        return statusTrace(accent: approved ? AppPalette.success : AppPalette.error) {
+        // Skip and Stop are your choices, not errors: grey, with the same glyphs as the tool row
+        // and as iOS (ToolRowState), so nothing here turns red.
+        let declined: ToolRowState = approval.decision == .skipped ? .skipped : .interrupted
+        let accent = approved ? AppPalette.success : declined.tint
+        return statusTrace(accent: accent) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: approved ? "checkmark" : "xmark")
-                    .foregroundStyle(approved ? AppPalette.success : AppPalette.error)
+                Image(systemName: approved ? "checkmark" : declined.systemImage ?? "minus.circle")
+                    .foregroundStyle(accent)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(approval.decision.displayName)
                         .font(AppTypography.mono(size: AppFontSize.body, weight: .semibold))
@@ -357,7 +392,7 @@ struct ExecutionItemRow: View {
                 Spacer(minLength: 8)
                 Text("\(approval.risk.displayName) risk")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(approved ? Color.secondary : AppPalette.error)
+                    .foregroundStyle(Color.secondary)
             }
         }
     }
@@ -623,5 +658,36 @@ struct FinishedStepsGroupRow: View {
             }
         }
         .frame(maxWidth: 920, alignment: .leading)
+    }
+}
+
+/// A tool row's status mark: the kit's mark while it runs, is done or failed, and the shared
+/// still glyph (ToolRowState) once it waits on you, was interrupted or was skipped.
+struct ToolStatusMark: View {
+    let state: ToolRowState
+    /// Spoken with the state ("bash, skipped"), so VoiceOver says which tool.
+    var toolName: String?
+
+    var body: some View {
+        mark
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(toolName.map { state.accessibilityLabel(toolName: $0) } ?? state.label)
+    }
+
+    @ViewBuilder
+    private var mark: some View {
+        switch state {
+        case .running:
+            OOToolStatus(.running)
+        case .completed:
+            OOToolStatus(.done)
+        case .failed:
+            OOToolStatus(.failed)
+        case .awaitingApproval, .interrupted, .skipped:
+            Image(systemName: state.systemImage ?? "circle")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(state.tint)
+                .frame(width: 16, height: 16)
+        }
     }
 }
