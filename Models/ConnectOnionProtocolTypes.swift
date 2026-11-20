@@ -37,8 +37,8 @@ nonisolated struct ConnectOnionApprovalRequest: Identifiable, Hashable, Sendable
     let batchRemaining: [JSONValue]
 }
 
-/// Keyword heuristics that rank and explain a pending tool call so the
-/// approval sheet stays useful even for tools the client has never seen.
+/// Keyword heuristics that rank a pending tool call and pick out its target and command.
+/// The one-sentence summary lives in the Kit (`OOApprovalDisclosure.summary`).
 extension ConnectOnionApprovalRequest {
     var riskLevel: ApprovalRiskLevel {
         let normalized = tool.lowercased()
@@ -71,49 +71,6 @@ extension ConnectOnionApprovalRequest {
         return nil
     }
 
-    var plainEnglishExplanation: String {
-        let normalized = tool.lowercased()
-        let target = targetSummary.map(Self.shortTarget)
-
-        if ["delete", "remove", "unlink"].contains(where: normalized.contains) {
-            return target.map { "Delete \($0)." }
-                ?? "Delete the selected item."
-        }
-        if normalized.contains("write") {
-            return target.map {
-                "Create or replace \($0) with the content supplied by the agent."
-            } ?? "Write content to a file."
-        }
-        if ["edit", "update", "patch"].contains(where: normalized.contains) {
-            return target.map { "Modify \($0) using the agent’s proposed changes." }
-                ?? "Modify an existing file or resource."
-        }
-        if normalized.contains("create") {
-            return target.map { "Create \($0)." }
-                ?? "Create a new file or resource."
-        }
-        if ["move", "rename"].contains(where: normalized.contains) {
-            return target.map { "Move or rename \($0)." }
-                ?? "Move or rename a file or resource."
-        }
-        if ["shell", "command", "execute", "bash"].contains(where: normalized.contains),
-           let command = commandText {
-            return Self.explain(command: command)
-        }
-        if ["send", "reply"].contains(where: normalized.contains) {
-            return target.map { "Send information to \($0)." }
-                ?? "Send information to an external recipient."
-        }
-        if normalized.contains("upload") {
-            return target.map { "Upload a file to \($0)." }
-                ?? "Upload a file to an external service."
-        }
-        if normalized.contains("click") {
-            return "Interact with the currently open webpage."
-        }
-        return "Allow the agent to run \(tool)."
-    }
-
     var commandText: String? {
         guard case .object(let values) = arguments else { return nil }
         for key in ["command", "cmd", "script"] {
@@ -122,44 +79,6 @@ extension ConnectOnionApprovalRequest {
             }
         }
         return nil
-    }
-
-    private static func shortTarget(_ value: String) -> String {
-        let lastComponent = URL(fileURLWithPath: value).lastPathComponent
-        return lastComponent.isEmpty ? value : lastComponent
-    }
-
-    private static func explain(command: String) -> String {
-        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
-        let words = trimmed.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard let executable = words.first else {
-            return "Run a shell command."
-        }
-
-        switch executable {
-        case "rm":
-            return "Delete the files or folders named by this command."
-        case "mkdir":
-            return "Create one or more folders."
-        case "touch":
-            return "Create an empty file or update its modified time."
-        case "cp":
-            return "Copy files or folders to another location."
-        case "mv":
-            return "Move or rename files or folders."
-        case "git":
-            let action = words.dropFirst().first ?? "operation"
-            return "Run a Git \(action) operation in the repository."
-        case "npm", "pnpm", "yarn":
-            let action = words.dropFirst().first ?? "command"
-            return "Run the \(action) task with \(executable)."
-        case "python", "python3":
-            return "Run a Python program or script."
-        case "swift":
-            return "Run a Swift command or program."
-        default:
-            return "Run a shell command using \(executable)."
-        }
     }
 }
 
