@@ -575,11 +575,34 @@ final class ChatViewTests: XCTestCase {
         XCTAssertNil(HostedInteractionCard.argumentLines(["cmd": .string("ls")], hidingCommand: true))
     }
 
+    // Open while it runs, waits on you or failed; folded once done, skipped (never applied) or stopped.
     @MainActor
-    func testDiffCardStartsOpenUnlessItsCallIsDone() {
+    func testDiffCardStartsOpenOnlyWhileThereIsSomethingToRead() {
         XCTAssertTrue(FileChangeCard.startsOpen(for: .running))
-        XCTAssertTrue(FileChangeCard.startsOpen(for: .error))
-        XCTAssertFalse(FileChangeCard.startsOpen(for: .done))
+        XCTAssertTrue(FileChangeCard.startsOpen(for: .awaitingApproval))
+        XCTAssertTrue(FileChangeCard.startsOpen(for: .failed))
+        XCTAssertFalse(FileChangeCard.startsOpen(for: .completed))
+        XCTAssertFalse(FileChangeCard.startsOpen(for: .skipped))
+        XCTAssertFalse(FileChangeCard.startsOpen(for: .interrupted))
+    }
+
+    // Only failures open by default; Skipped and Interrupted are your choices, not errors.
+    func testOnlyFailedToolCallsNeedAttention() {
+        func call(_ status: ExecutionStatus, result: String? = nil) -> ToolCallExecutionItem {
+            ToolCallExecutionItem(id: "t", name: "bash", args: [:], status: status, result: result, timingMS: nil)
+        }
+        XCTAssertTrue(call(.error).needsAttention)
+        XCTAssertTrue(call(.done, result: "Exit code: 2").needsAttention)
+        XCTAssertFalse(call(.done).needsAttention)
+        XCTAssertFalse(call(.skipped).needsAttention)
+        XCTAssertFalse(call(.interrupted).needsAttention)
+        XCTAssertFalse(call(.running).needsAttention)
+    }
+
+    // A status saved by a newer build reads as done, so the other saved traces still load.
+    func testAnUnknownSavedToolStatusReadsAsDone() throws {
+        let decoded = try JSONDecoder().decode([ExecutionStatus].self, from: Data(#"["skipped","paused_by_future"]"#.utf8))
+        XCTAssertEqual(decoded, [.skipped, .done])
     }
 
     @MainActor

@@ -669,7 +669,27 @@ extension ChatViewModel {
         }
     }
 
+    /// The running tool the open approval card asks about. Its row shows Awaiting approval.
+    var toolAwaitingApprovalID: String? {
+        guard case .approval(let request)? = pendingInteraction,
+              let runID = activeExecutionRunID,
+              let run = executionRuns.first(where: { $0.id == runID }) else {
+            return nil
+        }
+        // Matched by name and arguments. If the approval encodes a number differently from the
+        // tool call (1 vs 1.0), nothing matches and the row just stays Running: harmless.
+        return run.items.last { item in
+            guard case .toolCall(let toolCall) = item else { return false }
+            return toolCall.status == .running
+                && toolCall.name.lowercased() == request.tool.lowercased()
+                && JSONValue.object(toolCall.args) == request.arguments
+        }?.id
+    }
+
     func submitApproval(_ decision: ConnectOnionApprovalDecision) {
+        if case .rejectSoft = decision, let toolID = toolAwaitingApprovalID {
+            markTool(toolID, as: .skipped)
+        }
         if case .approval(let request)? = pendingInteraction {
             let recordedDecision: ApprovalRecordDecision
             switch decision {
@@ -1069,7 +1089,9 @@ extension ChatViewModel {
             thinking.status = itemStatus
             return .thinking(thinking)
         case .toolCall(var toolCall) where toolCall.status == .running:
-            toolCall.status = itemStatus
+            // It never got a result, so it never finished: Stop, a lost connection, a
+            // failure, or the rest of a batch you stopped (the host sends those nothing).
+            toolCall.status = .interrupted
             return .toolCall(toolCall)
         case .approval:
             return item
@@ -1128,6 +1150,16 @@ extension ChatViewModel {
             runs[runIndex].items.append(item)
         }
         setExecutionRuns(runs)
+    }
+
+    private func markTool(_ toolID: String, as status: ExecutionStatus) {
+        guard let runID = activeExecutionRunID,
+              let run = executionRuns.first(where: { $0.id == runID }),
+              case .toolCall(var toolCall)? = run.items.first(where: { $0.id == toolID }) else {
+            return
+        }
+        toolCall.status = status
+        upsertExecutionItem(.toolCall(toolCall))
     }
 
     private func updateMessageStatus(_ messageID: UUID, to status: MessageStatus) {
