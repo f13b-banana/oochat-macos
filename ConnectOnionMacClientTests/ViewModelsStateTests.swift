@@ -526,6 +526,23 @@ extension ViewModelsTests {
     }
 
     @MainActor
+    func testDeletingAChatForgetsItsSavedStopBarrier() {
+        let configuration = makeHostedConfiguration()
+        let session = ChatSession(agentConfigId: configuration.id, title: "Stopping")
+        let viewModel = AppViewModel(storage: makeIsolatedDefaults(), localAgentDefinitions: [])
+        viewModel.configurations = [configuration]
+        viewModel.sessions = [session]
+        viewModel.messages = [ChatMessage(sessionId: session.id, role: .user, content: "Hi")]
+        let key = "workroom.stop-barrier." + viewModel.workRoomBarrierScope(for: session)
+        UserDefaults.standard.set(Data("[]".utf8), forKey: key)
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+
+        viewModel.deleteSession(session)
+
+        XCTAssertNil(UserDefaults.standard.object(forKey: key))
+    }
+
+    @MainActor
     func testRelaunchReopensTheLastSelectedChat() {
         let storage = makeIsolatedDefaults()
         let configuration = makeHostedConfiguration()
@@ -613,6 +630,12 @@ extension ViewModelsTests {
         XCTAssertFalse(viewModel.messages.contains { $0.id == failed.id })
         XCTAssertEqual(viewModel.messages.last?.content, "hello")
         XCTAssertEqual(viewModel.messages.last?.status, .sending)
+    }
+
+    // Orphaned chats now sit in a quiet sidebar row instead of a launch alert ("chat(s)").
+    func testHiddenChatsRowCountsChatsInPlainWords() {
+        XCTAssertEqual(HiddenChatsRow.title(count: 1), "1 hidden chat")
+        XCTAssertEqual(HiddenChatsRow.title(count: 3), "3 hidden chats")
     }
 
     @MainActor

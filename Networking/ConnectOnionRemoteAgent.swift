@@ -39,6 +39,9 @@ actor ConnectOnionRemoteAgentClient {
     /// chat_items from the last CONNECTED. The host sends them when its copy of the
     /// session is newer, which is how a turn that finished while we were away is found.
     private var connectedChatItems: [[String: Any]]?
+    /// Ids of the Work Room requests sent on the current turn socket. The host's ERROR for one answers that
+    /// request in the Work Room; it does not fail the turn.
+    private var workRoomRequestIDs: Set<String> = []
 
     init(
         configuredTarget: String,
@@ -91,7 +94,7 @@ actor ConnectOnionRemoteAgentClient {
 
         // An agent that still requires onboarding has no authenticated
         // profile to show yet. Leave the public agent information in place.
-        guard try await waitForProfileHandshake(over: task) else {
+        guard try await waitForProfileHandshake(over: task, onEvent: onEvent) else {
             return
         }
 
@@ -113,14 +116,20 @@ actor ConnectOnionRemoteAgentClient {
             case "PING":
                 try? await sendFrame(OIPClientFrames.pong(), over: task)
             default:
-                continue
+                await emitWorkRoomFrame(next, onEvent: onEvent)
             }
         }
     }
 
+    /// Reads the handshake of a connection that sends no INPUT. True once CONNECTED arrives. Without
+    /// `handlesOnboarding`, ONBOARD_REQUIRED or a refusal ends it. With it, ONBOARD_REQUIRED is answered once with
+    /// `inviteCode` (the host then replays the CONNECT itself); without a code, or when the host refuses it, the
+    /// user is asked (again) and the connection ends, so a new code opens a new connection.
     private func waitForProfileHandshake(
-        over task: any ConnectOnionWebSocketTasking
+        over task: any ConnectOnionWebSocketTasking, inviteCode: String? = nil, handlesOnboarding: Bool = false,
+        onEvent: @escaping EventHandler
     ) async throws -> Bool {
+        var submitted: ConnectOnionOnboardingRequest?
         while true {
             let data = try await receiveFrameData(from: task, timeout: 30)
             let step: OIPHandshake.Step
@@ -133,7 +142,7 @@ actor ConnectOnionRemoteAgentClient {
 
             switch step {
             case .established(let connected):
-                adopt(connected)
+                await adopt(connected, onEvent: onEvent)
                 return true
 
             case .reply(let frame):
@@ -142,7 +151,22 @@ actor ConnectOnionRemoteAgentClient {
             case .incompatible(let incompatibility):
                 throw ConnectOnionRemoteError.incompatibleProtocol(incompatibility)
 
-            case .rejected, .onboardRequired:
+            case .onboardRequired(let required):
+                guard handlesOnboarding else { return false }
+                let request = makeOnboardingRequest(from: required)
+                guard let inviteCode, submitted == nil, required.methods.contains("invite_code") else {
+                    await onEvent(.onboardingRequired(request))
+                    return false
+                }
+                submitted = request
+                try await sendFrame(try frames().onboardSubmit(inviteCode: inviteCode), over: task)
+
+            case .rejected(let message):
+                // Only a refused invite code is the user's to fix. Any other refusal (an offline agent, a relay
+                // error) is a failed connection, so a held Work Room connection tries again.
+                guard let submitted else { throw ConnectOnionRemoteError.server(message) }
+                await onEvent(.onboardingRequired(submitted))
+                await onEvent(.error(message))
                 return false
 
             case .onboardSucceeded, .ignore:
@@ -536,14 +560,12 @@ extension ConnectOnionRemoteAgentClient {
                     request = await failedOver(request)
                 }
 
-                return try await runConnection(
-                    request,
-                    onUpdate: onUpdate,
-                    onEvent: onEvent
-                )
-            } catch let error as ConnectOnionRemoteError where !error.isRetryable {
-                throw error
+                let result = try await runConnection(request, onUpdate: onUpdate, onEvent: onEvent)
+                await onEvent(.workRoomConnectionDropped)
+                return result
             } catch {
+                await onEvent(.workRoomConnectionDropped)
+                if let remote = error as? ConnectOnionRemoteError, !remote.isRetryable { throw remote }
                 lastError = error
                 closeSocket()
                 state = reduce(state, .socketClosed, maxAttempts: policy.maxAttempts)
@@ -661,6 +683,7 @@ extension ConnectOnionRemoteAgentClient {
             onUpdate: onUpdate,
             onEvent: onEvent
         )
+        await emitWorkRoomTransport(over: task, endpoint: request.endpoint, onEvent: onEvent)
         return (task, established)
     }
 
@@ -792,7 +815,7 @@ extension ConnectOnionRemoteAgentClient {
             }
 
         case "ERROR":
-            try await handleServerError(event, onEvent: onEvent)
+            try await handleError(event, onEvent: onEvent)
 
         case "ask_user":
             pendingAskUserRequestID = Self.requestID(from: event)
@@ -800,6 +823,7 @@ extension ConnectOnionRemoteAgentClient {
             await onEvent(.askUser(makeAskUserRequest(from: event)))
 
         case "approval_needed":
+            await emitWorkRoomFrame(event, onEvent: onEvent)
             pendingApprovalRequestID = Self.requestID(from: event)
             markWaitingForInteraction()
             await onEvent(.approvalRequired(makeApprovalRequest(from: event)))
@@ -871,8 +895,7 @@ extension ConnectOnionRemoteAgentClient {
                 onEvent: onEvent
             )
 
-        case OIPFrameType.providerInvocation, OIPFrameType.providerActivity,
-             OIPFrameType.providerMessage:
+        case let type? where WorkRoomStore.frameTypes.contains(type):
             await onEvent(.workRoomFrame(OIPServerFrame.decode(event.mapValues { JSONValue(any: $0) })))
 
         case "intent", "thinking", "llm_call", "llm_result",
@@ -1003,6 +1026,27 @@ extension ConnectOnionRemoteAgentClient {
             )
         )
         return result
+    }
+
+    /// Every ERROR goes to the Work Room store first. One that answers a Work Room request (or is a stale approval
+    /// answer) is the Work Room's alone. A Station refusing the outer INPUT ends the turn as `stationOnly`, which
+    /// is not a chat failure. Anything else fails the turn as before.
+    private func handleError(_ event: [String: Any], onEvent: @escaping EventHandler) async throws {
+        await emitWorkRoomFrame(event, onEvent: onEvent)
+        guard case .error(let error) = OIPServerFrame.decode(event.mapValues { JSONValue(any: $0) }) else {
+            return try await handleServerError(event, onEvent: onEvent)
+        }
+        if let requestID = error.requestID, workRoomRequestIDs.remove(requestID) != nil {
+            return
+        }
+        if error.code == .string(OIPErrorCode.staleAnswer) {
+            return
+        }
+        if error.isProviderStationOnly {
+            endExecutionWithoutRecovery()
+            throw ConnectOnionRemoteError.stationOnly
+        }
+        try await handleServerError(event, onEvent: onEvent)
     }
 
     private func handleServerError(
@@ -1152,7 +1196,7 @@ extension ConnectOnionRemoteAgentClient {
             }
             switch step {
             case .established(let connected):
-                adopt(connected)
+                await adopt(connected, onEvent: onEvent)
                 if let modes = connected.sessionModes {
                     await onEvent(
                         .sessionModes(
@@ -1215,7 +1259,8 @@ extension ConnectOnionRemoteAgentClient {
 
     /// Keeps the host's session id, and its copy of the conversation when it is the newer one.
     /// A different id means the old session is not ours any more; drop transcript.
-    private func adopt(_ connected: OIPConnected) {
+    private func adopt(_ connected: OIPConnected, onEvent: EventHandler) async {
+        await onEvent(.workRoomSnapshot(connected))
         let asked = sessionState.sessionID
         if let sessionID = connected.sessionID {
             sessionState.sessionID = sessionID
@@ -1864,130 +1909,95 @@ extension ConnectOnionRemoteAgentClient {
     }
 }
 
-/// Async facade over the remote client, letting callers substitute a stub
-/// transport for the real actor.
-nonisolated protocol ConnectOnionRemoteAgentProviding: AnyObject, Sendable {
-    func probe() async throws -> ConnectOnionResolvedEndpoint
-    func loadAgentProfile(
-        onEvent: @escaping ConnectOnionRemoteAgentClient.EventHandler
-    ) async throws
-    func hasPendingExecution() async -> Bool
-    func executionModeSnapshot() async -> (
-        desired: AgentExecutionMode,
-        confirmed: AgentExecutionMode
-    )
-    func setExecutionMode(_ mode: AgentExecutionMode) async throws
-    func send(
-        prompt: String,
-        files: [ConnectOnionInputFile],
-        onUpdate: @escaping ConnectOnionRemoteAgentClient.UpdateHandler,
-        onEvent: @escaping ConnectOnionRemoteAgentClient.EventHandler
-    ) async throws -> String
-    func sendRuntimeInput(
-        prompt: String,
-        files: [ConnectOnionInputFile],
-        localMessageID: UUID
-    ) async throws
-    func interrupt() async throws
-    func respondToAskUser(answer: String) async throws
-    func respondToApproval(_ decision: ConnectOnionApprovalDecision) async throws
-    func respondToPlanReview(_ decision: ConnectOnionPlanReviewDecision) async throws
-    func respondToULWCheckpoint(
-        _ decision: ConnectOnionULWCheckpointDecision
-    ) async throws
-    func submitInviteCode(_ inviteCode: String) async throws
-    func recoverIfNeeded(
-        onUpdate: @escaping ConnectOnionRemoteAgentClient.UpdateHandler,
-        onEvent: @escaping ConnectOnionRemoteAgentClient.EventHandler
-    ) async
-    func runExec(
-        execID: String,
-        tool: String,
-        args: [String: JSONValue]
-    ) async throws -> OIPExecResult
-    func disconnect() async
-}
-
-extension ConnectOnionRemoteAgentProviding {
-    func loadAgentProfile(
-        onEvent: @escaping ConnectOnionRemoteAgentClient.EventHandler
-    ) async throws {
-        // Default no-op for injected test transports that don't load profiles.
+/// The Work Room's side of the connection: provider frames for its store, the transport its requests go out on, and
+/// a connection held open between turns. Here, not in its own file, because it uses the actor's private state.
+extension ConnectOnionRemoteAgentClient {
+    /// Hands a frame the Work Room store acts on to it; any other frame is ignored.
+    private func emitWorkRoomFrame(_ event: [String: Any], onEvent: EventHandler) async {
+        guard let type = event["type"] as? String, WorkRoomStore.frameTypes.contains(type) else { return }
+        await onEvent(.workRoomFrame(OIPServerFrame.decode(event.mapValues { JSONValue(any: $0) })))
     }
-}
 
-/// The production client satisfies the facade without any adaptation.
-extension ConnectOnionRemoteAgentClient: ConnectOnionRemoteAgentProviding {}
+    /// Hands the open socket's frame builder and signed send to the Work Room store. `endpoint` is the host this
+    /// socket reached; the client's own `endpoint` is not set yet on every path. A new socket starts with no
+    /// Work Room requests of its own.
+    private func emitWorkRoomTransport(
+        over task: any ConnectOnionWebSocketTasking,
+        endpoint: ConnectOnionResolvedEndpoint,
+        onEvent: EventHandler
+    ) async {
+        workRoomRequestIDs = []
+        guard let frames = try? frames(for: endpoint) else { return }
+        await onEvent(.workRoomTransport(frames: frames, send: { [weak self] frame in
+            await self?.sendWorkRoomFrame(frame, over: task) ?? false
+        }))
+    }
 
-/// Transport failures, partitioned by `isRetryable` so the reconnect loop
-/// retries only the failures a fresh socket could plausibly fix.
-nonisolated enum ConnectOnionRemoteError: LocalizedError {
-    case invalidAgentTarget
-    case agentNotFound
-    case agentOffline
-    case invalidRelayResponse
-    case directEndpointUnavailable
-    case invalidAgentInfo
-    case invalidProtocolMessage
-    case connectionClosed
-    case timedOut
-    case requestInProgress
-    case recoveryUnavailable
-    case cancelled
-    case interrupted
-    case interactionRequired(String)
-    case server(String)
-    case incompatibleProtocol(OIPHandshake.Incompatibility)
-
-    var isRetryable: Bool {
-        switch self {
-        case .connectionClosed, .timedOut, .directEndpointUnavailable:
+    /// Sends a Work Room request and remembers its id, so the host's ERROR for it is not taken as the turn's.
+    /// False when the write failed.
+    private func sendWorkRoomFrame(_ frame: [String: JSONValue], over task: any ConnectOnionWebSocketTasking) async -> Bool {
+        if let requestID = (frame["request_id"] ?? frame["requestId"])?.stringValue {
+            workRoomRequestIDs.insert(requestID)
+        }
+        do {
+            try await sendFrame(frame, over: task)
             return true
-        default:
+        } catch {
             return false
         }
     }
 
-    /// Set only for -32010. The view model shows the Incompatible screen when it is non-nil.
-    var incompatibility: OIPHandshake.Incompatibility? {
-        if case .incompatibleProtocol(let value) = self {
-            return value
+    /// Between turns no turn socket is open, so a Work Room has nothing to send Provider Input over.
+    /// This opens the same signed connection the profile loader uses, hands the Work Room store its
+    /// transport, and keeps reading provider frames into the store until the caller is cancelled or the
+    /// connection drops. It never sends INPUT. It does nothing while a turn socket is open, and a turn
+    /// that opens later takes over the store's transport; the caller cancels this when a turn starts.
+    /// `stationSessionID` is the session a paired Claude Station returned: the connection resumes it so the
+    /// host streams the Station's Work Room. A Station pane sets `handlesOnboarding`: the host's
+    /// ONBOARD_REQUIRED is then answered with `inviteCode` when there is one, and otherwise shown to the user.
+    /// Returns true when the connection could not be opened or ended on its own, so a new one may work; false
+    /// when a turn socket is open or the user has to act first.
+    func holdWorkRoomConnection(
+        stationSessionID: String? = nil, inviteCode: String? = nil, handlesOnboarding: Bool = false,
+        onEvent: @escaping EventHandler
+    ) async -> Bool {
+        guard webSocketTask == nil else { return false }
+        guard let target = try? await probe() else { return true }
+        if let stationSessionID {
+            sessionState.sessionID = stationSessionID
         }
-        return nil
-    }
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidAgentTarget:
-            return "Enter a valid ConnectOnion 0x address or HTTP(S) Direct URL"
-        case .agentNotFound:
-            return "The ConnectOnion relay could not find this agent"
-        case .agentOffline:
-            return "The ConnectOnion agent is offline"
-        case .invalidRelayResponse:
-            return "The ConnectOnion relay returned an invalid response"
-        case .directEndpointUnavailable:
-            return "The agent's direct endpoint is unavailable"
-        case .invalidAgentInfo:
-            return "The agent endpoint did not return a matching ConnectOnion address"
-        case .invalidProtocolMessage:
-            return "The hosted agent returned an invalid protocol message"
-        case .connectionClosed:
-            return "The hosted agent connection closed unexpectedly"
-        case .timedOut:
-            return "The hosted agent request timed out"
-        case .requestInProgress:
-            return "Wait for the current hosted agent request to finish"
-        case .recoveryUnavailable:
-            return "The hosted session could not be recovered safely. The original task was not resent."
-        case .cancelled:
-            return "The hosted agent connection was cancelled"
-        case .interrupted:
-            return "The hosted agent stopped the request"
-        case .interactionRequired(let message), .server(let message):
-            return message
-        case .incompatibleProtocol(let incompatibility):
-            return incompatibility.message
+        let task = webSocketFactory(target.webSocketURL)
+        var shouldRetry = true
+        await withTaskCancellationHandler {
+            task.resume()
+            do {
+                try await sendFrame(try connectFrame(for: target), over: task)
+                guard try await waitForProfileHandshake(
+                    over: task, inviteCode: inviteCode, handlesOnboarding: handlesOnboarding, onEvent: onEvent
+                ) else {
+                    shouldRetry = false
+                    return
+                }
+                await emitWorkRoomTransport(over: task, endpoint: target, onEvent: onEvent)
+                while true {
+                    let frame = try await receiveJSON(from: task, timeout: 90)
+                    if frame["type"] as? String == "PING" {
+                        try? await sendFrame(OIPClientFrames.pong(), over: task)
+                    } else {
+                        await emitWorkRoomFrame(frame, onEvent: onEvent)
+                    }
+                }
+            } catch {
+                // The connection ended; the store is told below.
+            }
+        } onCancel: {
+            task.cancel(with: .normalClosure, reason: nil)
         }
+        task.cancel(with: .normalClosure, reason: nil)
+        // A turn socket that opened meanwhile owns the store's transport now; leave it alone.
+        if webSocketTask == nil {
+            await onEvent(.workRoomConnectionDropped)
+        }
+        return shouldRetry
     }
 }

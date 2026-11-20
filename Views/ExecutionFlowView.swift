@@ -23,7 +23,11 @@ struct ExecutionFlowView: View {
                             isExpanded: startsExpanded(item)
                         )
                     case .workRoom(let workRoom):
-                        OOWorkRoomCard(workRoom: workRoom) { onOpenWorkRoom(workRoom.id) }
+                        OOWorkRoomCard(
+                            workRoom: workRoom,
+                            onOpen: { onOpenWorkRoom(workRoom.id) },
+                            onDecide: { workRooms.decide($0, in: workRoom.id) }
+                        )
                     case .finishedSteps(_, let steps):
                         FinishedStepsGroupRow(steps: steps, messageFontSize: messageFontSize)
                     }

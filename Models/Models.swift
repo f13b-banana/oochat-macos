@@ -19,12 +19,28 @@ nonisolated struct GeneralAgentConfiguration: Identifiable, Codable, Hashable {
     var addressConfiguration: AgentAddressConfiguration?
     var avatarTextColorHex: String?
     var avatarBackgroundColorHex: String?
+    /// Set once the host's profile says this agent is a Claude Station, so its row can show it before the next connect.
+    var isClaudeStation = false
 
     /// Stable identity: normalized 0x address or Direct URL. Used to keep
     /// sessions attached to the same agent even if its local UUID changes.
     var agentIdentity: String? {
         guard let raw = addressConfiguration?.agentAddress else { return nil }
         return ConnectOnionAgentTarget.normalized(raw)
+    }
+}
+
+extension GeneralAgentConfiguration {
+    /// Configurations saved before `isClaudeStation` existed have no such key.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        connectionType = try container.decode(AgentConnectionType.self, forKey: .connectionType)
+        addressConfiguration = try container.decodeIfPresent(AgentAddressConfiguration.self, forKey: .addressConfiguration)
+        avatarTextColorHex = try container.decodeIfPresent(String.self, forKey: .avatarTextColorHex)
+        avatarBackgroundColorHex = try container.decodeIfPresent(String.self, forKey: .avatarBackgroundColorHex)
+        isClaudeStation = try container.decodeIfPresent(Bool.self, forKey: .isClaudeStation) ?? false
     }
 }
 

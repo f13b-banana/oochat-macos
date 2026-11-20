@@ -436,4 +436,111 @@ extension ConnectOnionServiceTests {
         viewModel.runControlCenterSkill("/deploy to staging")
         XCTAssertEqual(viewModel.messages.map(\.content), ["/deploy to staging"])
     }
+
+    @MainActor
+    func testNewChatOnAStationReopensItsOneSession() {
+        let appViewModel = AppViewModel(storage: makeIsolatedDefaults())
+        var configuration = GeneralAgentConfiguration(
+            name: "Station",
+            connectionType: .byAddress,
+            addressConfiguration: AgentAddressConfiguration(agentAddress: "0x" + String(repeating: "7a", count: 32))
+        )
+        configuration.isClaudeStation = true
+        appViewModel.configurations = [configuration]
+        appViewModel.createNewSession(for: configuration)
+        appViewModel.selection = nil
+        appViewModel.createNewSession(for: configuration)
+
+        XCTAssertEqual(appViewModel.sessions.count, 1)
+        XCTAssertEqual(appViewModel.selection, .session(appViewModel.sessions[0].id))
+    }
+
+    @MainActor
+    func testStationRefusalMakesAStationAndNothingIsSentToIt() {
+        let appViewModel = AppViewModel(storage: makeIsolatedDefaults())
+        let configuration = GeneralAgentConfiguration(
+            name: "Station",
+            connectionType: .byAddress,
+            addressConfiguration: AgentAddressConfiguration(agentAddress: "0x" + String(repeating: "79", count: 32))
+        )
+        appViewModel.configurations = [configuration]
+        appViewModel.createNewSession(for: configuration)
+        appViewModel.createNewSession(for: configuration)
+        XCTAssertEqual(appViewModel.sessions.count, 1)
+        let session = appViewModel.sessions[0]
+        let viewModel = ChatViewModel(
+            session: session,
+            configuration: configuration,
+            service: ConnectOnionService(conversationID: session.id),
+            appViewModel: appViewModel
+        )
+        XCTAssertFalse(viewModel.isStation)
+
+        let refusal = OIPServerFrame.decode([
+            "type": .string("ERROR"), "code": .string("provider_station_only"), "message": .string("Station only")
+        ])
+        viewModel.handleIncomingEvent(.workRoomFrame(refusal))
+        viewModel.handleIncomingEvent(.stationRefusedChat)
+
+        XCTAssertTrue(viewModel.isStation)
+        XCTAssertTrue(appViewModel.configurations[0].isClaudeStation)
+        XCTAssertTrue(viewModel.messages.isEmpty)
+        XCTAssertNil(viewModel.interactionError)
+        viewModel.inputText = "hello"
+        viewModel.sendMessage()
+        XCTAssertTrue(viewModel.messages.isEmpty)
+    }
+
+    @MainActor
+    func testAnOrdinaryErrorOnAStationIsStillShown() {
+        let appViewModel = AppViewModel(storage: makeIsolatedDefaults())
+        var configuration = GeneralAgentConfiguration(
+            name: "Station",
+            connectionType: .byAddress,
+            addressConfiguration: AgentAddressConfiguration(agentAddress: "0x" + String(repeating: "78", count: 32))
+        )
+        configuration.isClaudeStation = true
+        appViewModel.configurations = [configuration]
+        appViewModel.createNewSession(for: configuration)
+        let session = appViewModel.sessions[0]
+        let viewModel = ChatViewModel(
+            session: session,
+            configuration: configuration,
+            service: ConnectOnionService(conversationID: session.id),
+            appViewModel: appViewModel
+        )
+        XCTAssertTrue(viewModel.isStation)
+
+        viewModel.handleIncomingEvent(.error("The ConnectOnion agent is offline"))
+
+        XCTAssertEqual(viewModel.interactionError, "The ConnectOnion agent is offline")
+        XCTAssertFalse(viewModel.messages.isEmpty)
+    }
+
+    @MainActor
+    func testStationPaneCodeIsRememberedAndRestartsTheConnection() {
+        let appViewModel = AppViewModel(storage: makeIsolatedDefaults())
+        let configuration = GeneralAgentConfiguration(
+            name: "Station",
+            connectionType: .byAddress,
+            addressConfiguration: AgentAddressConfiguration(agentAddress: "0x" + String(repeating: "7a", count: 32))
+        )
+        let session = ChatSession(agentConfigId: configuration.id, title: "Station")
+        let viewModel = ChatViewModel(
+            session: session,
+            configuration: configuration,
+            service: ConnectOnionService(conversationID: session.id),
+            appViewModel: appViewModel
+        )
+        let request = ConnectOnionOnboardingRequest(id: "o", methods: ["invite_code"], paymentAmount: nil, paymentAddress: nil)
+        viewModel.handleIncomingEvent(.onboardingRequired(request))
+        XCTAssertTrue(viewModel.isStationAwaitingCode)
+
+        viewModel.submitStationCode("  code-1 ")
+
+        XCTAssertEqual(viewModel.stationInviteCode, "code-1")
+        XCTAssertEqual(viewModel.stationOnboardingAttempt, 1)
+        XCTAssertFalse(viewModel.isStationAwaitingCode)
+        XCTAssertFalse(viewModel.workRooms.stationPairing.needsCode)
+    }
 }

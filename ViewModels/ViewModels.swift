@@ -135,6 +135,12 @@ class AppViewModel: ObservableObject {
     /// session ID from the local UUID so the transcript the host stores for
     /// this chat can be matched back during history import.
     func createNewSession(for config: GeneralAgentConfiguration) {
+        // A Claude Station has one pane: its existing session is opened, keeping its pairing.
+        let isStation = configurations.first { $0.id == config.id }?.isClaudeStation ?? config.isClaudeStation
+        if isStation, let existing = sessions.last(where: { $0.agentConfigId == config.id }) {
+            selection = .session(existing.id)
+            return
+        }
         // Reuse the selected draft instead of stacking up empty chats.
         if case .session(let selectedID) = selection,
            let existing = sessions.first(where: { $0.id == selectedID }),
@@ -153,18 +159,6 @@ class AppViewModel: ObservableObject {
         )
         sessions.append(newSession)
         selection = .session(newSession.id)
-    }
-
-    /// Whether the session has any messages. Sessions without messages are
-    /// drafts: never shown in the sidebar and never persisted.
-    func hasMessages(_ session: ChatSession) -> Bool {
-        messages.contains { $0.sessionId == session.id }
-    }
-
-    /// Sessions that should appear in the sidebar.
-    var visibleSessions: [ChatSession] {
-        let sessionIDsWithMessages = Set(messages.map { $0.sessionId })
-        return sessions.filter { sessionIDsWithMessages.contains($0.id) }
     }
 
     /// Remembers the open chat so a relaunch can reopen it. A draft's ID may be saved too,
@@ -193,10 +187,11 @@ class AppViewModel: ObservableObject {
         if case .session(let id) = selection { keptID = id }
         let sessionIDsWithMessages = Set(messages.map { $0.sessionId })
         let abandoned = sessions.filter {
-            !sessionIDsWithMessages.contains($0.id) && $0.id != keptID
+            !sessionIDsWithMessages.contains($0.id) && !hasMessages($0) && $0.id != keptID
         }
         guard !abandoned.isEmpty else { return }
         let abandonedIDs = Set(abandoned.map { $0.id })
+        forgetStopBarriers(for: abandoned)
         sessions.removeAll { abandonedIDs.contains($0.id) }
         for id in abandonedIDs {
             executionItemsBySession.removeValue(forKey: id)
@@ -218,6 +213,7 @@ class AppViewModel: ObservableObject {
             .filter { sessionIds.contains($0.sessionId) }
             .flatMap { $0.artifacts ?? [] }
 
+        forgetStopBarriers(for: sessions.filter { $0.agentConfigId == configuration.id })
         agentStatusTasks[configuration.id]?.cancel()
         agentStatusTasks[configuration.id] = nil
         connectedConfigurationIds.remove(configuration.id)
@@ -244,6 +240,7 @@ class AppViewModel: ObservableObject {
     func discardOrphanedSessions() {
         let orphanIDs = orphanedSessions.map { $0.id }
         guard !orphanIDs.isEmpty else { return }
+        forgetStopBarriers(for: orphanedSessions)
         sessions.removeAll { orphanIDs.contains($0.id) }
         messages.removeAll { orphanIDs.contains($0.sessionId) }
         for sessionId in orphanIDs {
@@ -264,6 +261,7 @@ class AppViewModel: ObservableObject {
         let artifactReferences = messages
             .filter { $0.sessionId == session.id }
             .flatMap { $0.artifacts ?? [] }
+        forgetStopBarriers(for: [session])
         sessions.removeAll { $0.id == session.id }
         messages.removeAll { $0.sessionId == session.id }
         executionItemsBySession.removeValue(forKey: session.id)
@@ -502,18 +500,6 @@ class AppViewModel: ObservableObject {
 
     func findExecutionRuns(for sessionId: UUID) -> [ExecutionRun] {
         return executionRunsBySession[sessionId] ?? []
-    }
-
-    /// The conversation's Work Room store, kept here like its execution runs so a
-    /// Work Room Card survives switching chats.
-    /// In memory only; removed with the chat.
-    func workRoomStore(for sessionId: UUID) -> WorkRoomStore {
-        if let store = workRoomStores[sessionId] {
-            return store
-        }
-        let store = WorkRoomStore()
-        workRoomStores[sessionId] = store
-        return store
     }
 
     func setExecutionItems(_ items: [ExecutionItem], for sessionId: UUID) {
@@ -1096,6 +1082,44 @@ class AppViewModel: ObservableObject {
 }
 
 extension AppViewModel {
+    /// The scope for a chat id; a chat that is not in `sessions` yet falls back to its own id.
+    func workRoomBarrierScope(forSessionID sessionId: UUID) -> String {
+        sessions.first { $0.id == sessionId }.map(workRoomBarrierScope(for:)) ?? sessionId.uuidString
+    }
+
+    /// Agent identity plus the host session id (the local id for chats that never had one): both are
+    /// saved with the chat, so the scope is the same after a relaunch and differs per chat.
+    func workRoomBarrierScope(for session: ChatSession) -> String {
+        let agent = session.agentIdentity ?? session.agentConfigId.uuidString
+        return "\(agent):\(session.remoteSessionID ?? session.id.uuidString.lowercased())"
+    }
+
+    /// The conversation's Work Room store, kept here like its execution runs so a
+    /// Work Room Card survives switching chats.
+    /// Its Stop Barrier is saved under `workRoomBarrierScope(for:)`, so it survives a relaunch.
+    func workRoomStore(for sessionId: UUID) -> WorkRoomStore {
+        if let store = workRoomStores[sessionId] {
+            return store
+        }
+        let store = WorkRoomStore(barrierScope: workRoomBarrierScope(forSessionID: sessionId))
+        workRoomStores[sessionId] = store
+        return store
+    }
+
+    /// A deleted chat takes its saved Stop Barrier with it, so the entry does not stay in defaults for good.
+    private func forgetStopBarriers(for removed: [ChatSession]) {
+        for session in removed {
+            WorkRoomStore.forgetBarrier(scope: workRoomBarrierScope(for: session))
+        }
+    }
+
+    /// Remembers that an agent is a Claude Station so the sidebar can draw its row.
+    func markClaudeStation(_ configurationID: UUID) {
+        guard let index = configurations.firstIndex(where: { $0.id == configurationID }),
+              !configurations[index].isClaudeStation else { return }
+        configurations[index].isClaudeStation = true
+    }
+
     /// True when the local transcript ends with a user message the hosted
     /// snapshot does not contain — the client is ahead (e.g. a second message
     /// sent before the running turn's snapshot was taken), so overwriting the
@@ -1200,4 +1224,21 @@ func preservingLocalMetadata(
     }
 
     return merged
+}
+
+extension AppViewModel {
+    /// Whether the session has any messages. Sessions without messages are
+    /// drafts: never shown in the sidebar and never persisted. A Claude Station's
+    /// session carries no chat messages (its Work Room is the pane), so it is never a draft:
+    /// dropping it would lose the pairing it holds.
+    func hasMessages(_ session: ChatSession) -> Bool {
+        messages.contains { $0.sessionId == session.id }
+            || configuration(for: session)?.isClaudeStation == true
+    }
+
+    /// Sessions that should appear in the sidebar.
+    var visibleSessions: [ChatSession] {
+        let sessionIDsWithMessages = Set(messages.map { $0.sessionId })
+        return sessions.filter { sessionIDsWithMessages.contains($0.id) || hasMessages($0) }
+    }
 }

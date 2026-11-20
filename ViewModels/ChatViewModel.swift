@@ -34,6 +34,11 @@ class ChatViewModel: ObservableObject {
     @Published private(set) var isDiscardingInterruptedEvents = false
     /// This conversation's Work Rooms, fed every decoded provider frame.
     let workRooms: WorkRoomStore
+    /// The pairing code a Station pane sends as the invite code when the host asks for onboarding. The attempt
+    /// count changes on every entry, so the pane's connection restarts even for the same code.
+    /// Set in `ChatViewModel+WorkRoom.swift`.
+    @Published var stationInviteCode: String?
+    @Published var stationOnboardingAttempt = 0
 
     let session: ChatSession
     private let initialConfiguration: GeneralAgentConfiguration
@@ -45,7 +50,12 @@ class ChatViewModel: ObservableObject {
     }
     let service: ConnectOnionService
     let appViewModel: AppViewModel
-    let voiceInputService = VoiceInputService()
+    let voiceInputService: VoiceInputService
+    /// The Work Room whose composer started the current dictation. The one voice service serves
+    /// the main composer and the Work Room composer, so only one of them can use it at a time.
+    @Published var dictatingRoomID: String?
+    /// The microphone guidance for the last failed dictation, shown in that Work Room's composer.
+    @Published var dictationGuidance: String?
 
     private var messageTask: Task<Void, Never>?
     private var statusTask: Task<Void, Never>?
@@ -56,12 +66,16 @@ class ChatViewModel: ObservableObject {
     private var textBeforeVoiceInput = ""
     private var activeExecutionRunID: UUID?
 
-    init(session: ChatSession, configuration: GeneralAgentConfiguration, service: ConnectOnionService, appViewModel: AppViewModel) {
+    init(session: ChatSession, configuration: GeneralAgentConfiguration, service: ConnectOnionService, appViewModel: AppViewModel,
+         voiceInputService: VoiceInputService? = nil) {
+        self.voiceInputService = voiceInputService ?? VoiceInputService()
         self.session = session
         self.initialConfiguration = configuration
         self.service = service
         self.appViewModel = appViewModel
         workRooms = appViewModel.workRoomStore(for: session.id)
+        service.ownsProviderApproval = { [workRooms] in workRooms.ownsApproval($0) }
+        service.onWorkRoomEvent = { [weak self] in self?.handleIncomingEvent($0) }
 
         messages = appViewModel.findMessages(for: session.id)
         executionItems = appViewModel.findExecutionItems(for: session.id)
@@ -125,13 +139,39 @@ class ChatViewModel: ObservableObject {
         voiceInputService.$transcript
             .sink { [weak self] transcript in
                 guard let self, !transcript.isEmpty else { return }
+                if let roomID = self.dictatingRoomID {
+                    self.workRooms.appendDictation(transcript, in: roomID)
+                    return
+                }
                 let prefix = self.textBeforeVoiceInput
                 self.inputText = prefix.isEmpty ? transcript : "\(prefix) \(transcript)"
             }
             .store(in: &cancellables)
 
+        // A failed Work Room dictation shows its guidance there; a finished one frees the mic.
+        voiceInputService.$errorMessage
+            .sink { [weak self] message in
+                guard let self, let message, self.dictatingRoomID != nil else { return }
+                self.dictationGuidance = message
+                self.dictatingRoomID = nil
+            }
+            .store(in: &cancellables)
+
+        voiceInputService.$isTranscribing
+            .removeDuplicates()
+            .sink { [weak self] isTranscribing in
+                if !isTranscribing { self?.dictatingRoomID = nil }
+            }
+            .store(in: &cancellables)
+
+        // `.values` on a PassthroughSubject keeps no buffer, so an event sent while the previous one is still being
+        // handled would be lost. The stream keeps every event, in order, until it is handled.
+        let (events, continuation) = AsyncStream.makeStream(of: ConnectOnionTransportEvent.self)
+        service.incomingEvents
+            .sink { continuation.yield($0) }
+            .store(in: &cancellables)
         messageTask = Task { [weak self] in
-            for await event in service.incomingEvents.values {
+            for await event in events {
                 if Task.isCancelled { break }
                 guard let self else { break }
                 self.handleIncomingEvent(event)
@@ -142,8 +182,8 @@ class ChatViewModel: ObservableObject {
     func handleIncomingEvent(_ event: ConnectOnionTransportEvent) {
         // Revision-gated Work Room state, not transcript output: a Provider's
         // terminal update must still land while an interrupted run is discarded.
-        if case .workRoomFrame(let frame) = event {
-            workRooms.receive(frame)
+        if event.isWorkRoomEvent {
+            handleWorkRoomEvent(event)
             return
         }
         if isDiscardingInterruptedEvents {
@@ -178,6 +218,9 @@ class ChatViewModel: ObservableObject {
 
         case .agentProfile(let profile):
             agentProfile = profile
+            if profile.isClaudeStation {
+                appViewModel.markClaudeStation(initialConfiguration.id)
+            }
 
         case .executionItem(let item):
             upsertExecutionItem(item)
@@ -270,8 +313,15 @@ class ChatViewModel: ObservableObject {
                 self.dashboard = dashboard
             }
 
-        case .workRoomFrame:
+        case .workRoomFrame, .workRoomSnapshot, .workRoomTransport, .workRoomConnectionDropped:
             break  // Fed to the Work Room store above.
+
+        case .stationRefusedChat:
+            // The host is a Station: the message was never a chat turn, so no failure reason is shown.
+            pendingUsage = nil
+            isSubmittingInteraction = false
+            finishActiveExecutionRun(with: .error)
+            markOutstandingMessages(as: .error)
 
         case .incompatible(let incompatibility):
             pendingUsage = nil
@@ -297,10 +347,9 @@ class ChatViewModel: ObservableObject {
             interactionError = message
             let replyToMessageID = activeRequestMessageID
             finishActiveExecutionRun(with: .error)
-            if case .onboarding? = pendingInteraction {
-                return
-            }
             let failedIDs = outstandingMessageIDs
+            // The host is asking for onboarding; the error belongs to that prompt, not to a failed chat.
+            if case .onboarding? = pendingInteraction { return }
             markOutstandingMessages(as: .error)
             if configuration.connectionType == .byAddress {
                 appViewModel.setAgentConnected(configuration, isConnected: false)
@@ -503,7 +552,7 @@ class ChatViewModel: ObservableObject {
     /// Captures the composer text before recording so the live transcript
     /// appends to what was typed instead of replacing it.
     func toggleVoiceInput() {
-        guard !voiceInputService.isTranscribing else { return }
+        guard !voiceInputService.isTranscribing, dictatingRoomID == nil else { return }
         if voiceInputService.isRecording {
             voiceInputService.stopRecording()
         } else {
@@ -520,7 +569,7 @@ extension ChatViewModel {
     /// summarize prompt so the request text is never empty.
     func sendMessage() {
         let trimmedInput = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedInput.isEmpty || !pendingAttachments.isEmpty else { return }
+        guard !trimmedInput.isEmpty || !pendingAttachments.isEmpty, !isStation else { return }
 
         if let validationError = attachmentValidationError {
             attachmentError = validationError
@@ -875,7 +924,7 @@ extension ChatViewModel {
         title: String?,
         clearsComposer: Bool
     ) {
-        guard !service.isInterruptRequested else { return }
+        guard !service.isInterruptRequested, !isStation else { return }
         let summaries = request.files.map {
             ChatAttachmentSummary(name: $0.name, byteCount: $0.byteCount)
         }
