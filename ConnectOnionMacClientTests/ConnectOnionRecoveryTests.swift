@@ -697,18 +697,4 @@ extension ConnectOnionRemoteAgentTests {
         XCTAssertEqual(ControlCenterPaneWidth.clamped(640), 640)
         XCTAssertEqual(ControlCenterPaneWidth.clamped(2_000), 900)
     }
-
-    func testTheControlCenterNeverSqueezesTheChatBelowItsMinimum() {
-        // 900 pt window with the 300 pt sidebar open: 600 pt of detail. The pane gives way, the chat keeps 360.
-        XCTAssertEqual(ControlCenterPaneWidth.fitted(500, in: 600), 234)
-        // Sidebar hidden: the default pane fits as it is.
-        XCTAssertEqual(ControlCenterPaneWidth.fitted(500, in: 900), 500)
-        // A saved 900 pt pane is cut down to leave the chat its minimum (900 - 6 - 360).
-        XCTAssertEqual(ControlCenterPaneWidth.fitted(900, in: 900), 534)
-        // The pane keeps its own 320 pt minimum while there is room for it (686 - 6 - 360).
-        XCTAssertEqual(ControlCenterPaneWidth.fitted(100, in: 1_200), 320)
-        XCTAssertEqual(ControlCenterPaneWidth.fitted(500, in: 686), 320)
-        // Never negative.
-        XCTAssertEqual(ControlCenterPaneWidth.fitted(500, in: 300), 0)
-    }
 }

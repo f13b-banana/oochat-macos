@@ -388,10 +388,12 @@ struct ChatView: View {
                     configuration: viewModel.configuration,
                     isConnected: viewModel.isConfigurationConnected,
                     connectionSnapshot: viewModel.connectionSnapshot,
-                    agentProfile: viewModel.agentProfile
+                    agentProfile: viewModel.agentProfile,
+                    dashboard: viewModel.dashboard
                 ) { prompt in
+                    // Fill, don't send: the person can add arguments first.
                     viewModel.inputText = prompt
-                    viewModel.sendMessage()
+                    isInputFocused = true
                 }
             } else {
             ScrollViewReader { proxy in
@@ -454,6 +456,8 @@ struct ChatView: View {
                                         viewModel.retryRecovery()
                                     }
                                     .buttonStyle(.borderless)
+                                    .frame(minHeight: 28)
+                                    .contentShape(Rectangle())
                                 }
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
@@ -937,7 +941,7 @@ enum ControlCenterPaneWidth {
     static let maximum = 900.0
     static let initial = 500.0
     static let keyStep = 10.0
-    static let handleWidth: CGFloat = 6
+    static let handleWidth: CGFloat = 12 // original value = 6
     /// oo-chat keeps the chat column at lg:min-w-[360px] (workspace-shell.tsx); the pane gives way, not the chat.
     static let minimumChatWidth = 360.0
     static func clamped(_ width: Double) -> Double {

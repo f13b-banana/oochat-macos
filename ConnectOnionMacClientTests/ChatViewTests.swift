@@ -552,6 +552,17 @@ final class ChatViewTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentWithoutSkillsIsDescribedByItsTools() {
+        XCTAssertEqual(
+            WelcomeHomeView.capabilitySentence(tools: ["read_file", "write_file", "run_command", "web_fetch"]),
+            "Can read and edit files, run commands and browse the web."
+        )
+        XCTAssertEqual(WelcomeHomeView.capabilitySentence(tools: ["bash"]), "Can run commands.")
+        // Unknown tools only: no sentence, so the screen falls back to "Type a message to start."
+        XCTAssertNil(WelcomeHomeView.capabilitySentence(tools: ["get_weather"]))
+        XCTAssertNil(WelcomeHomeView.capabilitySentence(tools: []))
+    }
+
     func testApprovalShowsArgumentsInlineWithoutRepeatingTheCommand() {
         let write: [String: JSONValue] = ["path": .string("hi.md"), "content": .string("hello")]
         XCTAssertEqual(
