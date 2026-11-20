@@ -178,6 +178,9 @@ actor StubRemoteAgentClient: ConnectOnionRemoteAgentProviding {
             )
         )
         await onEvent(.modeChanged(.plan))
+        for event in eventsOnRecover {
+            await onEvent(event)
+        }
     }
 
     func disconnect() async {
@@ -203,8 +206,28 @@ actor StubRemoteAgentClient: ConnectOnionRemoteAgentProviding {
         return result
     }
 
+    // What the host sends on the profile visit after the probe (loadAgentProfile); empty = nothing.
+    var profileVisitEvents: [ConnectOnionTransportEvent] = []
+
+    func setProfileVisitEvents(_ events: [ConnectOnionTransportEvent]) {
+        profileVisitEvents = events
+    }
+
+    func loadAgentProfile(onEvent: @escaping ConnectOnionRemoteAgentClient.EventHandler) async throws {
+        for event in profileVisitEvents {
+            await onEvent(event)
+        }
+    }
+
     func setPendingExecution(_ value: Bool) {
         pendingExecution = value
+    }
+
+    /// Sent after the stub's own events on each recovery.
+    var eventsOnRecover: [ConnectOnionTransportEvent] = []
+
+    func setEventsOnRecover(_ events: [ConnectOnionTransportEvent]) {
+        eventsOnRecover = events
     }
 
     func setFailures(_ value: Set<StubRemoteOperation>) {

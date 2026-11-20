@@ -54,6 +54,10 @@ actor RemoteProtocolRecorder {
             events.append("error:\(value)")
         case .incompatible(let value):
             events.append("incompatible:\(value.neededVersion ?? "unknown")")
+        case .dashboard(.page(let html)):
+            events.append("dashboard:\(html.utf8.count)")
+        case .dashboard(.tooLarge(let bytes)):
+            events.append("dashboard_too_large:\(bytes)")
         case .agentProfile:
             events.append("agent_profile")
         }

@@ -247,7 +247,7 @@ extension ConnectOnionRemoteAgentTests {
             prompt: "Run the task",
             onUpdate: { update in
                 await recorder.record(update)
-                if update.status == "Authenticating" {
+                if update.status == "Connecting" {
                     await recordProtocolFailure(recorder) {
                         try await client.sendRuntimeInput(
                             prompt: "Queued follow-up",
@@ -302,7 +302,7 @@ extension ConnectOnionRemoteAgentTests {
         XCTAssertEqual(output, "completed")
         let snapshot = await recorder.snapshot()
         XCTAssertTrue(snapshot.failures.isEmpty)
-        XCTAssertTrue(snapshot.updates.contains("Authenticating:Direct endpoint"))
+        XCTAssertTrue(snapshot.updates.contains("Connecting:Direct endpoint"))
         XCTAssertTrue(snapshot.updates.contains("Running:none"))
         XCTAssertTrue(snapshot.updates.contains("Stopping:Hosted agent acknowledged the interrupt"))
         XCTAssertTrue(snapshot.events.contains("ask_user"))

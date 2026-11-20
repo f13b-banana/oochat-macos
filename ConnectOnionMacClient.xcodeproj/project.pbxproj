@@ -38,6 +38,9 @@
 		BB0000013000000000000001 /* WalletServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000023000000000000002 /* WalletServiceTests.swift */; };
 		CC0000013000000000000001 /* ConnectOnionRemoteAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000023000000000000002 /* ConnectOnionRemoteAgent.swift */; };
 		CC0000033000000000000003 /* ConnectOnionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000043000000000000004 /* ConnectOnionServiceTests.swift */; };
+		D3963B8B309733DA008EAA02 /* ConnectOnionDashboardSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3963B8A309733D3008EAA02 /* ConnectOnionDashboardSnapshot.swift */; };
+		D3963B8D309735E1008EAA02 /* ConnectOnionDashboardSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3963B8C309735E0008EAA02 /* ConnectOnionDashboardSnapshotTests.swift */; };
+		D3963B91309A16A7008EAA02 /* DashboardSkillActionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3963B90309A16A5008EAA02 /* DashboardSkillActionTests.swift */; };
 		D3B60E343084E8850012C501 /* IncompatibleAgentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3B60E333084E87D0012C501 /* IncompatibleAgentView.swift */; };
 		D3F3173A30789DC3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F3173930789DB3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift */; };
 		D3F3173C3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F3173B3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift */; };
@@ -131,6 +134,9 @@
 		BB0000043000000000000004 /* ConnectOnionMacClientTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ConnectOnionMacClientTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC0000023000000000000002 /* ConnectOnionRemoteAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionRemoteAgent.swift; sourceTree = "<group>"; };
 		CC0000043000000000000004 /* ConnectOnionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionServiceTests.swift; sourceTree = "<group>"; };
+		D3963B8A309733D3008EAA02 /* ConnectOnionDashboardSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionDashboardSnapshot.swift; sourceTree = "<group>"; };
+		D3963B8C309735E0008EAA02 /* ConnectOnionDashboardSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionDashboardSnapshotTests.swift; sourceTree = "<group>"; };
+		D3963B90309A16A5008EAA02 /* DashboardSkillActionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardSkillActionTests.swift; sourceTree = "<group>"; };
 		D3B60E333084E87D0012C501 /* IncompatibleAgentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncompatibleAgentView.swift; sourceTree = "<group>"; };
 		D3F3173930789DB3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectOnionIdentityStore+PrivateKeyStoring.swift"; sourceTree = "<group>"; };
 		D3F3173B3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionConnectAdoptionTests.swift; sourceTree = "<group>"; };
@@ -285,6 +291,8 @@
 		BB0000063000000000000006 /* ConnectOnionMacClientTests */ = {
 			isa = PBXGroup;
 			children = (
+				D3963B90309A16A5008EAA02 /* DashboardSkillActionTests.swift */,
+				D3963B8C309735E0008EAA02 /* ConnectOnionDashboardSnapshotTests.swift */,
 				D3F3173B3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift */,
 				CC0000043000000000000004 /* ConnectOnionServiceTests.swift */,
 				BB0000023000000000000002 /* WalletServiceTests.swift */,
@@ -331,6 +339,7 @@
 		D00000020000000000000002 /* Networking */ = {
 			isa = PBXGroup;
 			children = (
+				D3963B8A309733D3008EAA02 /* ConnectOnionDashboardSnapshot.swift */,
 				D3F3173930789DB3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift */,
 				34A616252FEBF5F6009B8B1C /* ConnectOnionService.swift */,
 				CC0000023000000000000002 /* ConnectOnionRemoteAgent.swift */,
@@ -503,6 +512,7 @@
 				KB0200000000000000000001 /* GeneratedArtifactCard.swift in Sources */,
 				KB0300000000000000000001 /* ExecutionFlowView.swift in Sources */,
 				KB0400000000000000000001 /* ExecutionItemRow.swift in Sources */,
+				D3963B8B309733DA008EAA02 /* ConnectOnionDashboardSnapshot.swift in Sources */,
 				KB0500000000000000000001 /* FileChangeCard.swift in Sources */,
 				KB0600000000000000000001 /* ChatComposerControls.swift in Sources */,
 				KB0700000000000000000001 /* HostedInteractionCard.swift in Sources */,
@@ -540,12 +550,14 @@
 				KH1000000000000000000001 /* ConnectOnionRecoveryTests.swift in Sources */,
 				KH1100000000000000000001 /* ConnectOnionRemoteAgentTestDoubles.swift in Sources */,
 				KH1200000000000000000001 /* ToolPresentationTests.swift in Sources */,
+				D3963B91309A16A7008EAA02 /* DashboardSkillActionTests.swift in Sources */,
 				F10000013000000000000001 /* SettingsViewTests.swift in Sources */,
 				F20000013000000000000001 /* BalanceViewTests.swift in Sources */,
 				F30000013000000000000001 /* AgentSettingsViewTests.swift in Sources */,
 				F40000013000000000000001 /* ConnectOnionRemoteAgentTests.swift in Sources */,
 				A90000013000000000000001 /* ConnectOnionLiveHostTests.swift in Sources */,
 				A91000013000000000000001 /* SidebarViewTests.swift in Sources */,
+				D3963B8D309735E1008EAA02 /* ConnectOnionDashboardSnapshotTests.swift in Sources */,
 				G10000053000000000000005 /* UsageStoreTests.swift in Sources */,
 				F50000013000000000000001 /* DockerRuntimeRobustnessTests.swift in Sources */,
 				H10000033000000000000003 /* GeneratedArtifactStoreTests.swift in Sources */,

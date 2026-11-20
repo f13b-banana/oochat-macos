@@ -5,10 +5,14 @@ import ConnectOnionKit
 /// Selects the messages, execution runs, and approvals visible in the chat.
 struct ChatView: View {
     @StateObject var viewModel: ChatViewModel
-    let conversationWidth: CGFloat
+    private let fullConversationWidth: CGFloat
     let historySelectionRevision: Int
 
     @AppStorage("chatFontSize") private var chatFontSize: Double = 15
+    @AppStorage("isControlCenterOpen") private var isControlCenterOpen = true
+    @AppStorage("controlCenterPaneWidth") private var paneWidth = Double(ControlCenterPaneWidth.initial)
+    @State private var dragStartWidth: Double?
+    @State private var detailWidth: CGFloat = 0
     @State private var keyMonitor: Any?
     @State private var isFileDropTargeted = false
     @FocusState private var isInputFocused: Bool
@@ -28,12 +32,114 @@ struct ChatView: View {
         isFileDropTargeted: Bool = false
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
-        self.conversationWidth = conversationWidth
+        self.fullConversationWidth = conversationWidth
         self.historySelectionRevision = historySelectionRevision
         _isFileDropTargeted = State(initialValue: isFileDropTargeted)
     }
 
     var body: some View {
+        HStack(spacing: 0) {
+            chatColumn
+
+            if let dashboard = viewModel.dashboard, let shownWidth = shownPaneWidth {
+                paneResizeHandle
+                OOControlCenterPane(
+                    dashboard: dashboard,
+                    skills: viewModel.agentProfile?.skills,
+                    onRunSkill: viewModel.runControlCenterSkill,
+                    onCollapse: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isControlCenterOpen = false
+                    }
+                })
+                .frame(width: shownWidth)
+            }
+        }
+        .background {
+            GeometryReader { proxy in
+                Color.clear.onAppear { detailWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, width in detailWidth = width }
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                SessionStatusHeader(service: viewModel.service)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                if viewModel.dashboard != nil {
+                    OOControlCenterButton(isOpen: isControlCenterOpen) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isControlCenterOpen.toggle()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The pane's width on screen: the saved width, cut down so the chat keeps `minimumChatWidth`.
+    /// nil when the pane is closed or no dashboard.
+    /// The saved width is left alone, so the pane comes back at its old size when the window grows.
+    private var shownPaneWidth: CGFloat? {
+        guard viewModel.dashboard != nil, isControlCenterOpen else { return nil }
+        guard detailWidth > 0 else { return CGFloat(ControlCenterPaneWidth.clamped(paneWidth)) }
+        return CGFloat(ControlCenterPaneWidth.fitted(paneWidth, in: Double(detailWidth)))
+    }
+
+    /// What the user sees, so a drag or an arrow key starts from the visible edge, not a hidden wider one.
+    private var currentPaneWidth: Double {
+        shownPaneWidth.map { Double($0) } ?? paneWidth
+    }
+
+    /// The reading column narrows by the pane's width, so the pane never covers the chat.
+    private var conversationWidth: CGFloat {
+        guard let pane = shownPaneWidth, detailWidth > 0 else {
+            return fullConversationWidth
+        }
+        let chatWidth = detailWidth - pane - ControlCenterPaneWidth.handleWidth
+        return min(fullConversationWidth, max(0, chatWidth - 48))
+    }
+
+    /// A one-point hairline with a wider grab area; drag, or use the arrow keys, to resize
+    /// (oo-chat use-pane-width.ts). The pane is on the right, so dragging left widens it.
+    private var paneResizeHandle: some View {
+        Rectangle()
+            .fill(OOColor.hairline)
+            .frame(width: 1)
+            .frame(width: ControlCenterPaneWidth.handleWidth)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    let start = dragStartWidth ?? currentPaneWidth
+                    dragStartWidth = start
+                    paneWidth = ControlCenterPaneWidth.clamped(start - value.translation.width)
+                }
+                .onEnded { _ in dragStartWidth = nil }
+            )
+            .focusable()
+            .onKeyPress(.leftArrow) {
+                paneWidth = ControlCenterPaneWidth.clamped(currentPaneWidth + ControlCenterPaneWidth.keyStep)
+                return .handled
+            }
+            .onKeyPress(.rightArrow) {
+                paneWidth = ControlCenterPaneWidth.clamped(currentPaneWidth - ControlCenterPaneWidth.keyStep)
+                return .handled
+            }
+            .accessibilityElement()
+            .accessibilityLabel("Resize Control Center")
+            .accessibilityValue("\(Int(currentPaneWidth)) points")
+            .accessibilityAdjustableAction { direction in
+                let step = direction == .increment ? ControlCenterPaneWidth.keyStep : -ControlCenterPaneWidth.keyStep
+                paneWidth = ControlCenterPaneWidth.clamped(currentPaneWidth + step)
+            }
+
+    }
+
+    private var chatColumn: some View {
         ZStack {
             AppBackground()
 
@@ -86,11 +192,6 @@ struct ChatView: View {
         .navigationTitle("")
         .toolbarBackground(AppPalette.toolbarSurface, for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                SessionStatusHeader(service: viewModel.service)
-            }
-        }
     }
 
     private var hasStartedConversation: Bool {
@@ -839,5 +940,26 @@ private struct SessionStatusHeader: View {
             label: service.hostedAgentStatus,
             isLive: service.isHostedAgentStatusLive
         ).accessibilityLabel("Session status: \(service.hostedAgentStatus)")
+    }
+}
+
+/// The Control Center is 320 to 900 points wide and starts at 500 as per webchat
+enum ControlCenterPaneWidth {
+    static let minimum = 320.0
+    static let maximum = 900.0
+    static let initial = 500.0
+    static let keyStep = 10.0
+    static let handleWidth: CGFloat = 6
+    /// oo-chat keeps the chat column at lg:min-w-[360px] (workspace-shell.tsx); the pane gives way, not the chat.
+    static let minimumChatWidth = 360.0
+    static func clamped(_ width: Double) -> Double {
+        min(maximum, max(minimum, width))
+    }
+
+    /// The pane's width on screen in a detail area `detailWidth` wide: `width` cut down so the chat keeps
+    /// `minimumChatWidth`. As in oo-chat, the pane shrinks below its own minimum rather than hide.
+    static func fitted(_ width: Double, in detailWidth: Double) -> Double {
+        let room = detailWidth - Double(handleWidth) - minimumChatWidth
+        return max(0, min(clamped(width), room))
     }
 }

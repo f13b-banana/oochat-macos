@@ -58,9 +58,7 @@ actor ConnectOnionRemoteAgentClient {
         self.identityStore = identityStore
         self.urlSession = urlSession
         self.usageRecorder = usageRecorder
-        self.webSocketFactory = webSocketFactory ?? {
-            urlSession.webSocketTask(with: $0)
-        }
+        self.webSocketFactory = webSocketFactory ?? Self.defaultWebSocket(urlSession: urlSession)
         self.sleep = sleep
         sessionStore = ConnectOnionRemoteSessionStore(
             conversationID: conversationID,
@@ -85,16 +83,11 @@ actor ConnectOnionRemoteAgentClient {
     ) async throws {
         let target = try await probe()
         let task = webSocketFactory(target.webSocketURL)
-        defer {
-            task.cancel(with: .normalClosure, reason: nil)
-        }
+        defer { task.cancel(with: .normalClosure, reason: nil) }
 
         task.resume()
 
-        try await sendFrame(
-            try connectFrame(for: target),
-            over: task
-        )
+        try await sendFrame( try connectFrame(for: target), over: task)
 
         // An agent that still requires onboarding has no authenticated
         // profile to show yet. Leave the public agent information in place.
@@ -102,15 +95,26 @@ actor ConnectOnionRemoteAgentClient {
             return
         }
 
-        // Per the protocol, AGENT_PROFILE is sent immediately after CONNECTED.
-        let event = try await receiveJSON(from: task, timeout: 10)
-        guard event["type"] as? String == "AGENT_PROFILE" else {
-            return
-        }
-
-        let fields = event.mapValues { JSONValue(any: $0) }
-        if case .agentProfile(let profile) = OIPServerFrame.decode(fields) {
-            await onEvent(.agentProfile(profile))
+        // The host sends AGENT_PROFILE and then the Control Center which O Chat's page gets on open.
+        // They are read in whatever order they arrive and the wait ends once both are in.
+        // Only these two frames and the keepalive PING are handled here.
+        var hasProfile = false
+        var hasSnapshot = false
+        while !(hasProfile && hasSnapshot), let next = try? await receiveJSON(from: task, timeout: 5) {
+            switch next["type"] as? String {
+            case "AGENT_PROFILE":
+                if case .agentProfile(let profile) = OIPServerFrame.decode(next.mapValues { JSONValue(any: $0) }) {
+                    await onEvent(.agentProfile(profile))
+                }
+                hasProfile = true
+            case "DASHBOARD_SNAPSHOT":
+                await emitDashboardSnapshot(next, currentSessionID: sessionState.sessionID, onEvent: onEvent)
+                hasSnapshot = true
+            case "PING":
+                try? await sendFrame(OIPClientFrames.pong(), over: task)
+            default:
+                continue
+            }
         }
     }
 
@@ -501,10 +505,11 @@ extension ConnectOnionRemoteAgentClient {
     /// endpoint exists, the final fallback polls the hosted session over HTTP
     /// instead of giving up.
     private func runWithRecovery(
-        _ request: ConnectOnionConnectionRequest,
+        _ firstRequest: ConnectOnionConnectionRequest,
         onUpdate: @escaping UpdateHandler,
         onEvent: @escaping EventHandler
     ) async throws -> String {
+        var request = firstRequest
         var lastError: Error?
 
         let policy = ReconnectPolicy()
@@ -522,12 +527,13 @@ extension ConnectOnionRemoteAgentClient {
                 if attempt > 0 {
                     await onUpdate(
                         ConnectOnionTransportUpdate(
-                            status: "Reconnecting",
+                            status: statusLabel(.connecting(attempt: attempt)),
                             detail: "Attempt \(attempt + 1) of \(policy.maxAttempts)",
                             isLive: false
                         )
                     )
                     try await sleep(UInt64(policy.delay(for: attempt) * 1_000_000_000))
+                    request = await failedOver(request)
                 }
 
                 return try await runConnection(
@@ -557,14 +563,46 @@ extension ConnectOnionRemoteAgentClient {
         throw lastError ?? ConnectOnionRemoteError.recoveryUnavailable
     }
 
-        private func runConnection(
+    /// A direct endpoint that dropped is resolved again, which falls back to the relay when
+    /// the agent still looks reachable there, as iOS does. The same session_id and
+    /// last_msg_id go out in CONNECT, so the host resumes the run. A lookup that fails, or
+    /// one that finds the same socket again, keeps the endpoint the run started on.
+    private func failedOver(_ request: ConnectOnionConnectionRequest) async -> ConnectOnionConnectionRequest {
+        guard request.endpoint.isDirect,
+            let fresh = try? await resolver.resolve(configuredTarget),
+            fresh.webSocketURL != request.endpoint.webSocketURL else {
+                return request
+            }
+        endpoint = fresh
+        return ConnectOnionConnectionRequest(
+            prompt: request.prompt,
+            files: request.files,
+            inputID: request.inputID,
+            identity: request.identity,
+            endpoint: fresh
+        )
+    }
+
+    /// The header's words come from the kit, so macOS and iOS say the same thing.
+    private func statusLabel(
+        _ state: SessionState,
+        hostStatus: String? = nil
+    ) -> String {
+        SessionStatusLabel.text(
+            state: state,
+            hasBookmark: sessionState.lastMessageID != nil,
+            hostStatus: hostStatus
+        )
+    }
+
+    private func runConnection(
         _ request: ConnectOnionConnectionRequest,
         onUpdate: @escaping UpdateHandler,
         onEvent: @escaping EventHandler
     ) async throws -> String {
         await onUpdate(
             ConnectOnionTransportUpdate(
-                status: "Authenticating",
+                status: statusLabel(.connecting(attempt: 0)),
                 detail: connectionDetail(for: request.endpoint),
                 isLive: false
             )
@@ -593,7 +631,7 @@ extension ConnectOnionRemoteAgentClient {
         try await flushPendingActions(over: task, endpoint: request.endpoint)
         await onUpdate(
             ConnectOnionTransportUpdate(
-                status: "Running",
+                status: statusLabel(.connected, hostStatus: "running"),
                 detail: established.isRunning ? "Resumed session" : nil,
                 isLive: true
             )
@@ -743,6 +781,9 @@ extension ConnectOnionRemoteAgentClient {
         case "PING":
             try await sendFrame(OIPClientFrames.pong(), over: task)
 
+        case "DASHBOARD_SNAPSHOT":
+            await emitDashboardSnapshot(event, currentSessionID: sessionState.sessionID, onEvent: onEvent)
+
         case "AGENT_PROFILE":
             let fields = event.mapValues { JSONValue(any: $0) }
 
@@ -886,7 +927,7 @@ extension ConnectOnionRemoteAgentClient {
         await onEvent(.recoveryState("Recovered completed session"))
         await onUpdate(
             ConnectOnionTransportUpdate(
-                status: "Connected",
+                status: statusLabel(.connected, hostStatus: "connected"),
                 detail: connectionDetail(for: endpoint),
                 isLive: true
             )
@@ -952,7 +993,7 @@ extension ConnectOnionRemoteAgentClient {
         closeSocket()
         await onUpdate(
             ConnectOnionTransportUpdate(
-                status: "Connected",
+                status: statusLabel(.connected, hostStatus: "connected"),
                 detail: connectionDetail(for: endpoint),
                 isLive: true
             )
@@ -1042,7 +1083,7 @@ extension ConnectOnionRemoteAgentClient {
         }
         await onUpdate(
             ConnectOnionTransportUpdate(
-                status: "Running",
+                status: statusLabel(.connected, hostStatus: "running"),
                 detail: "Input queued",
                 isLive: true
             )
@@ -1744,6 +1785,7 @@ extension ConnectOnionRemoteAgentClient {
             }
             group.addTask {
                 try await Task.sleep(nanoseconds: timeout * 1_000_000_000)
+                task.cancel(with: .goingAway, reason: nil)
                 throw ConnectOnionRemoteError.timedOut
             }
 
