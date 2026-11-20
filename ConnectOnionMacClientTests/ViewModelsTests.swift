@@ -582,6 +582,24 @@ final class ViewModelsTests: XCTestCase {
     }
 
     @MainActor
+    func testWorkRoomBarrierScopeIsStablePerChat() {
+        let viewModel = makeViewModel()
+        let agentId = UUID()
+        let first = ChatSession(agentConfigId: agentId, agentIdentity: "0xabc", title: "One")
+        let second = ChatSession(agentConfigId: agentId, agentIdentity: "0xabc", title: "Two")
+        let reloaded = first
+
+        XCTAssertNotEqual(
+            viewModel.workRoomBarrierScope(for: first),
+            viewModel.workRoomBarrierScope(for: second)
+        )
+        XCTAssertEqual(
+            viewModel.workRoomBarrierScope(for: first),
+            viewModel.workRoomBarrierScope(for: reloaded)
+        )
+    }
+
+    @MainActor
     func testDeleteSessionRemovesAllRelatedStateAndSelection() async {
         let viewModel = makeViewModel()
         let session = ChatSession(agentConfigId: UUID(), title: "Delete me")

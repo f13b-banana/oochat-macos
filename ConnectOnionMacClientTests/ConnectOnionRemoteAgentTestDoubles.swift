@@ -62,6 +62,8 @@ actor RemoteProtocolRecorder {
             events.append("agent_profile")
         case .workRoomFrame:
             events.append("work_room_frame")
+        case .workRoomSnapshot, .workRoomTransport, .workRoomConnectionDropped, .stationRefusedChat:
+            break
         }
     }
 

@@ -77,6 +77,9 @@
 		KD0500000000000000000001 /* ConnectOnionEventDecoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = KC0500000000000000000001 /* ConnectOnionEventDecoding.swift */; };
 		KF0000000000000000000001 /* AgentTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0000000000000000000001 /* AgentTypes.swift */; };
 		KF0100000000000000000001 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0100000000000000000001 /* ChatViewModel.swift */; };
+		KF0100000000000000000002 /* ChatViewModel+WorkRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0100000000000000000002 /* ChatViewModel+WorkRoom.swift */; };
+		KF0100000000000000000003 /* ConnectOnionRemoteAgentProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0100000000000000000003 /* ConnectOnionRemoteAgentProviding.swift */; };
+		KF0100000000000000000004 /* ConnectOnionRemoteAgentWorkRoomTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0100000000000000000004 /* ConnectOnionRemoteAgentWorkRoomTests.swift */; };
 		KF0200000000000000000001 /* BalanceViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0200000000000000000001 /* BalanceViewModel.swift */; };
 		KH0000000000000000000001 /* ChatViewRenderingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = KG0000000000000000000001 /* ChatViewRenderingTests.swift */; };
 		KH0100000000000000000001 /* ChatViewPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = KG0100000000000000000001 /* ChatViewPresentationTests.swift */; };
@@ -173,6 +176,9 @@
 		KC0500000000000000000001 /* ConnectOnionEventDecoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionEventDecoding.swift; sourceTree = "<group>"; };
 		KE0000000000000000000001 /* AgentTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTypes.swift; sourceTree = "<group>"; };
 		KE0100000000000000000001 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		KE0100000000000000000002 /* ChatViewModel+WorkRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModel+WorkRoom.swift"; sourceTree = "<group>"; };
+		KE0100000000000000000003 /* ConnectOnionRemoteAgentProviding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionRemoteAgentProviding.swift; sourceTree = "<group>"; };
+		KE0100000000000000000004 /* ConnectOnionRemoteAgentWorkRoomTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionRemoteAgentWorkRoomTests.swift; sourceTree = "<group>"; };
 		KE0200000000000000000001 /* BalanceViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BalanceViewModel.swift; sourceTree = "<group>"; };
 		KG0000000000000000000001 /* ChatViewRenderingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewRenderingTests.swift; sourceTree = "<group>"; };
 		KG0100000000000000000001 /* ChatViewPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewPresentationTests.swift; sourceTree = "<group>"; };
@@ -248,6 +254,7 @@
 				34A616282FEBF5F6009B8B1C /* ViewModels.swift */,
 				KE0000000000000000000001 /* AgentTypes.swift */,
 				KE0100000000000000000001 /* ChatViewModel.swift */,
+				KE0100000000000000000002 /* ChatViewModel+WorkRoom.swift */,
 				KE0200000000000000000001 /* BalanceViewModel.swift */,
 			);
 			path = ViewModels;
@@ -315,6 +322,7 @@
 				F20000023000000000000002 /* BalanceViewTests.swift */,
 				F30000023000000000000002 /* AgentSettingsViewTests.swift */,
 				F40000023000000000000002 /* ConnectOnionRemoteAgentTests.swift */,
+				KE0100000000000000000004 /* ConnectOnionRemoteAgentWorkRoomTests.swift */,
 				A90000023000000000000002 /* ConnectOnionLiveHostTests.swift */,
 				A91000023000000000000002 /* SidebarViewTests.swift */,
 				G10000063000000000000006 /* UsageStoreTests.swift */,
@@ -343,6 +351,7 @@
 				D3F3173930789DB3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift */,
 				34A616252FEBF5F6009B8B1C /* ConnectOnionService.swift */,
 				CC0000023000000000000002 /* ConnectOnionRemoteAgent.swift */,
+				KE0100000000000000000003 /* ConnectOnionRemoteAgentProviding.swift */,
 				KC0100000000000000000001 /* ConnectOnionEndpointResolver.swift */,
 				KC0200000000000000000001 /* ConnectOnionHistoryClient.swift */,
 				KC0500000000000000000001 /* ConnectOnionEventDecoding.swift */,
@@ -487,6 +496,7 @@
 				AA0000012FEBF5F6009B8B1C /* ConnectOnionMacClientApp.swift in Sources */,
 				AA0000022FEBF5F6009B8B1C /* ConnectOnionService.swift in Sources */,
 				CC0000013000000000000001 /* ConnectOnionRemoteAgent.swift in Sources */,
+				KF0100000000000000000003 /* ConnectOnionRemoteAgentProviding.swift in Sources */,
 				KD0000000000000000000001 /* ConnectOnionProtocolTypes.swift in Sources */,
 				KD0100000000000000000001 /* ConnectOnionEndpointResolver.swift in Sources */,
 				KD0200000000000000000001 /* ConnectOnionHistoryClient.swift in Sources */,
@@ -502,6 +512,7 @@
 				KF0000000000000000000001 /* AgentTypes.swift in Sources */,
 				82E31D61309889CF00559E2C /* AgentBalanceNotice.swift in Sources */,
 				KF0100000000000000000001 /* ChatViewModel.swift in Sources */,
+				KF0100000000000000000002 /* ChatViewModel+WorkRoom.swift in Sources */,
 				KF0200000000000000000001 /* BalanceViewModel.swift in Sources */,
 				1C3C632A3004F1D600BD248D /* DesignSystem.swift in Sources */,
 				AA0000052FEBF5F6009B8B1C /* AgentSettingsView.swift in Sources */,
@@ -555,6 +566,7 @@
 				F20000013000000000000001 /* BalanceViewTests.swift in Sources */,
 				F30000013000000000000001 /* AgentSettingsViewTests.swift in Sources */,
 				F40000013000000000000001 /* ConnectOnionRemoteAgentTests.swift in Sources */,
+				KF0100000000000000000004 /* ConnectOnionRemoteAgentWorkRoomTests.swift in Sources */,
 				A90000013000000000000001 /* ConnectOnionLiveHostTests.swift in Sources */,
 				A91000013000000000000001 /* SidebarViewTests.swift in Sources */,
 				D3963B8D309735E1008EAA02 /* ConnectOnionDashboardSnapshotTests.swift in Sources */,
@@ -710,7 +722,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ConnectOnionMacClient/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "";
+				INFOPLIST_KEY_CFBundleDisplayName = "oo-chat";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -744,7 +756,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ConnectOnionMacClient/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "";
+				INFOPLIST_KEY_CFBundleDisplayName = "oo-chat";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (

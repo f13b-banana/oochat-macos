@@ -42,17 +42,40 @@ struct ChatView: View {
     }
 
     var body: some View {
-        if let openWorkRoomID, let workRoom = viewModel.workRooms.workRoom(id: openWorkRoomID) {
+        if viewModel.isStation {
+            stationDetail
+        } else if let openWorkRoomID, let workRoom = viewModel.workRooms.workRoom(id: openWorkRoomID) {
             workRoomDetail(workRoom)
         } else {
             chatDetail
         }
     }
 
+    private func workRoomView(_ workRoom: WorkRoom) -> some View {
+        OOWorkRoomView(
+            workRoom: workRoom,
+            onDecide: { viewModel.workRooms.decide($0, in: workRoom.id) },
+            onStop: { viewModel.workRooms.stop(in: workRoom.id) },
+            onDraftChange: { viewModel.workRooms.setDraft($0, in: workRoom.id) },
+            onSend: { viewModel.workRooms.send(in: workRoom.id) },
+            onChangePermission: { viewModel.workRooms.changePermission(to: $0, confirmRisk: $1, in: workRoom.id) },
+            onChangeControl: { viewModel.workRooms.changeControl($0, in: workRoom.id) },
+            mic: viewModel.workRoomMic(for: workRoom.id)
+        )
+        .onChange(of: workRoom.composer.canDictate) { _, canDictate in
+            if !canDictate { viewModel.cancelDictation(in: workRoom.id) }
+        }
+        .onDisappear { viewModel.cancelDictation(in: workRoom.id) }
+    }
+
     /// The Work Room takes the whole detail pane. The Control Center pane and its toggle are not
     /// drawn here, and their saved state is not touched, so Back restores them exactly.
     private func workRoomDetail(_ workRoom: WorkRoom) -> some View {
-        OOWorkRoomView(workRoom: workRoom)
+        workRoomView(workRoom)
+            // Reconnects after each turn; a running turn uses its own socket.
+            .task(id: "\(viewModel.service.isAgentRequestActive)-\(viewModel.service.connectionGeneration)") {
+                await viewModel.service.holdWorkRoomConnection()
+            }
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Button {
@@ -624,7 +647,7 @@ struct ChatView: View {
                     .help(viewModel.fileInputHelpText)
 
                     TextField(
-                        "Type a message to ConnectOnion agent…",
+                        "Message the agent",
                         text: $viewModel.inputText,
                         axis: .vertical
                     )
@@ -1013,5 +1036,74 @@ enum ControlCenterPaneWidth {
     static func fitted(_ width: Double, in detailWidth: Double) -> Double {
         let room = detailWidth - Double(handleWidth) - minimumChatWidth
         return max(0, min(clamped(width), room))
+    }
+}
+
+/// The Station pane's single field while the host asks for onboarding. The same code is the invite code and,
+/// once connected, the pairing code.
+private struct StationInviteCodeView: View {
+    let error: String?
+    let onSubmit: (String) -> Void
+    @State private var code = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Pair with your terminal")
+                .font(.title2.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            Text("Enter the pairing code shown by your Claude Code terminal.")
+                .foregroundStyle(.secondary)
+            SecureField("Pairing code", text: $code)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(submit)
+                .accessibilityLabel("Pairing code")
+            Button("Pair", action: submit)
+                .buttonStyle(.appPrimary)
+                .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityLabel("Pair with Claude Station")
+            if let error {
+                Text(error).font(.subheadline).foregroundStyle(.red)
+            }
+        }
+        .frame(maxWidth: 480, alignment: .leading)
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private func submit() {
+        onSubmit(code)
+        code = ""
+    }
+}
+
+extension ChatView {
+    /// A Claude Station's pane is its Work Room straight away, or the pairing field until it is paired.
+    /// There is no Back and no chat behind it. The connection resumes the paired session once there is one.
+    private var stationDetail: some View {
+        let workRooms = viewModel.workRooms
+        return Group {
+            if let workRoom = workRooms.stationWorkRoom {
+                workRoomView(workRoom)
+            } else if viewModel.isStationAwaitingCode {
+                StationInviteCodeView(error: viewModel.interactionError, onSubmit: viewModel.submitStationCode)
+            } else if workRooms.stationPairing.needsCode {
+                OOStationPairingView(pairing: workRooms.stationPairing) { workRooms.pairStation(code: $0) }
+            } else {
+                ProgressView("Connecting to your Station")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        // The chat column, which connects an ordinary agent, is never drawn for a Station.
+        .onAppear { viewModel.connectIfNeeded() }
+        .task(id: "\(viewModel.service.isAgentRequestActive)-\(viewModel.service.connectionGeneration)-"
+            + "\(workRooms.stationPairing.sessionID ?? "")-\(viewModel.stationOnboardingAttempt)") {
+            await viewModel.service.holdWorkRoomConnection(
+                stationSessionID: workRooms.stationPairing.sessionID,
+                inviteCode: viewModel.stationInviteCode,
+                handlesOnboarding: true
+            )
+        }
+        .toolbarBackground(AppPalette.toolbarSurface, for: .windowToolbar)
+        .toolbarBackground(.visible, for: .windowToolbar)
     }
 }

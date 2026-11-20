@@ -152,6 +152,12 @@ struct SidebarView: View {
             }
 
             VStack(spacing: 2) {
+                // Chats whose agent is gone sit here quietly instead of in a launch alert.
+                if !appViewModel.orphanedSessions.isEmpty {
+                    HiddenChatsRow(count: appViewModel.orphanedSessions.count) {
+                        appViewModel.discardOrphanedSessions()
+                    }
+                }
                 settingsButton
             }
             .padding(.horizontal, 10)
@@ -205,7 +211,7 @@ struct SidebarView: View {
                 HStack(spacing: 10) {
                     logoMark
 
-                    Text("ConnectOnion")
+                    Text("oo-chat")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
                         .lineLimit(1)
@@ -221,7 +227,7 @@ struct SidebarView: View {
             }
             .buttonStyle(.plain)
             .help("Go to agent picker")
-            .accessibilityLabel("ConnectOnion — Go to agent picker")
+            .accessibilityLabel("oo-chat — Go to agent picker")
             .onHover { hoveredLogo = $0 }
 
             Spacer()
@@ -447,7 +453,11 @@ private extension SidebarView {
                     toggleChats(for: config.id)
                 }
 
-                OOAvatarTile(name: config.name, isOnline: state.isConnected)
+                OOAvatarTile(
+                    name: config.name,
+                    isOnline: state.isConnected,
+                    isStation: config.isClaudeStation
+                )
 
                 TextField("Agent name", text: $editingAgentName)
                     .textFieldStyle(.plain)
@@ -461,7 +471,11 @@ private extension SidebarView {
                     }
             } else {
                 Button {
-                    toggleChats(for: config.id)
+                    if config.isClaudeStation {
+                        appViewModel.createNewSession(for: config)
+                    } else {
+                        toggleChats(for: config.id)
+                    }
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "chevron.down")
@@ -474,30 +488,36 @@ private extension SidebarView {
 
                         OOAvatarTile(
                             name: config.name,
-                            isOnline: state.isConnected
+                            isOnline: state.isConnected,
+                            isStation: config.isClaudeStation
                         )
 
-                        Text(config.name)
-                            .font(.system(
-                                size: AppFontSize.body,
-                                weight: .semibold
-                            ))
-                            .foregroundColor(
-                                .primary.opacity(state.isActive ? 1 : 0.9)
-                            )
-                            .lineLimit(1)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(config.name)
+                                .font(.system(
+                                    size: AppFontSize.body,
+                                    weight: .semibold
+                                ))
+                                .foregroundColor(
+                                    .primary.opacity(state.isActive ? 1 : 0.9)
+                                )
+                                .lineLimit(1)
+                            if config.isClaudeStation {
+                                OOStationCaption()
+                            }
+                        }
 
                         Spacer(minLength: 0)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(!state.hasChats)
+                .disabled(!state.hasChats && !config.isClaudeStation)
                 .accessibilityLabel(config.name)
                 .accessibilityHint(
-                    state.areChatsExpanded
-                        ? "Collapse chats"
-                        : "Expand chats"
+                    config.isClaudeStation
+                        ? "Open Station"
+                        : state.areChatsExpanded ? "Collapse chats" : "Expand chats"
                 )
             }
 
@@ -1040,5 +1060,78 @@ private extension SidebarView {
         } else {
             return Color.clear
         }
+    }
+}
+
+/// Chats that belong to an agent that's no longer added. They're hidden, not deleted, so this
+/// stays a quiet grey row; the explanation and Discard live in its popover.
+struct HiddenChatsRow: View {
+    let count: Int
+    let onDiscard: () -> Void
+
+    @State private var isShowingDetails = false
+    @State private var isConfirmingDiscard = false
+
+    static func title(count: Int) -> String {
+        count == 1 ? "1 hidden chat" : "\(count) hidden chats"
+    }
+
+    var body: some View {
+        Button {
+            isShowingDetails = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: AppFontSize.footnote, weight: .medium))
+                Text(Self.title(count: count))
+                    .font(.system(size: AppFontSize.footnote))
+                Spacer()
+                Image(systemName: "info.circle")
+                    .font(.system(size: AppFontSize.footnote))
+            }
+            .foregroundStyle(OOColor.inkSecondary)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Chats from an agent that's no longer added")
+        .popover(isPresented: $isShowingDetails, arrowEdge: .trailing) {
+            details
+        }
+        .confirmationDialog(
+            count == 1 ? "Discard 1 hidden chat?" : "Discard \(count) hidden chats?",
+            isPresented: $isConfirmingDiscard
+        ) {
+            Button("Discard", role: .destructive, action: onDiscard)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Their messages are deleted from this Mac. This can't be undone.")
+        }
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Hidden chats")
+                .font(.headline)
+            Text("These chats belong to an agent that's no longer added. Add the agent again to bring them back.")
+                .font(.system(size: AppFontSize.footnote))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button("Discard…", role: .destructive) {
+                    isShowingDetails = false
+                    isConfirmingDiscard = true
+                }
+                .tint(AppPalette.error)
+                Button("Keep") {
+                    isShowingDetails = false
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 280)
     }
 }
