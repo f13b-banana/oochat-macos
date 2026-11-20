@@ -1,4 +1,5 @@
 import SwiftUI
+import ConnectOnionKit
 
 struct PendingAttachmentChip: View {
     let attachment: ConnectOnionInputFile
@@ -7,7 +8,7 @@ struct PendingAttachmentChip: View {
     var body: some View {
         HStack(spacing: 7) {
             Image(systemName: "doc.fill")
-                .foregroundColor(.accentColor)
+                .foregroundColor(AppPalette.brand)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(attachment.name)
@@ -26,8 +27,11 @@ struct PendingAttachmentChip: View {
             Button(action: remove) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Remove Attachment")
             .help("Remove attachment")
         }
         .padding(.leading, 10)
@@ -66,8 +70,8 @@ struct ExecutionModeSelector: View {
                             .frame(height: 24)
                             .foregroundColor(
                                 selected(mode)
-                                    ? AppPalette.primaryActionForeground
-                                    : .secondary
+                                    ? (mode == .accept ? OOColor.decisionText : AppPalette.primaryActionForeground)
+                                    : OOColor.inkSecondary
                             )
                             .background(selectionColor(mode))
                             .clipShape(RoundedRectangle(
@@ -172,7 +176,7 @@ struct ExecutionModeSelector: View {
 
     private func selectionColor(_ mode: AgentExecutionMode) -> Color {
         guard selected(mode) else { return .clear }
-        return mode == .accept ? AppPalette.error : AppPalette.primaryAction
+        return mode == .accept ? OOColor.decisionLine : AppPalette.primaryAction
     }
 }
 
@@ -188,7 +192,7 @@ private struct ExecutionModeGuide: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: mode.systemImage)
                         .font(.system(size: AppFontSize.body, weight: .medium))
-                        .foregroundStyle(mode == .accept ? AppPalette.error : .secondary)
+                        .foregroundStyle(mode == .accept ? OOColor.decisionText : .secondary)
                         .frame(width: 20, height: 20)
 
                     VStack(alignment: .leading, spacing: 3) {

@@ -62,9 +62,6 @@ struct ChatView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                SessionStatusHeader(service: viewModel.service)
-            }
             ToolbarItem(placement: .primaryAction) {
                 if viewModel.dashboard != nil {
                     OOControlCenterButton(isOpen: isControlCenterOpen) {
@@ -141,7 +138,8 @@ struct ChatView: View {
 
     private var chatColumn: some View {
         ZStack {
-            AppBackground()
+            OOColor.surface
+                .ignoresSafeArea()
 
             chatBody
 
@@ -389,9 +387,11 @@ struct ChatView: View {
                 WelcomeHomeView(
                     configuration: viewModel.configuration,
                     isConnected: viewModel.isConfigurationConnected,
-                    connectionSnapshot: viewModel.connectionSnapshot
+                    connectionSnapshot: viewModel.connectionSnapshot,
+                    agentProfile: viewModel.agentProfile
                 ) { prompt in
                     viewModel.inputText = prompt
+                    viewModel.sendMessage()
                 }
             } else {
             ScrollViewReader { proxy in
@@ -699,8 +699,8 @@ struct ChatView: View {
                                 .help("Waiting for the hosted agent to confirm the mode")
                         } else if let turnsLeft = viewModel.acceptTurnsLeft {
                             Text("\(turnsLeft) \(turnsLeft == 1 ? "turn" : "turns") left")
-                                .font(.system(size: AppFontSize.caption, weight: .medium))
-                                .foregroundStyle(AppPalette.error)
+                                .font(.system(size: AppFontSize.caption, weight: .medium).monospacedDigit())
+                                .foregroundStyle(OOColor.inkSecondary)
                                 .help("Accept mode ends after these turns")
                         }
                         ExecutionModeSelector(viewModel: viewModel)
@@ -930,18 +930,6 @@ enum SkillPaletteNavigation {
 }
 
 /// Shows the latest session usage in a single compact line.
-
-/// The chat header's session words, from the kit through the service.
-private struct SessionStatusHeader: View {
-    @ObservedObject var service: ConnectOnionService
-
-    var body: some View {
-        OOStatusDot(
-            label: service.hostedAgentStatus,
-            isLive: service.isHostedAgentStatusLive
-        ).accessibilityLabel("Session status: \(service.hostedAgentStatus)")
-    }
-}
 
 /// The Control Center is 320 to 900 points wide and starts at 500 as per webchat
 enum ControlCenterPaneWidth {

@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import ConnectOnionKit
 @testable import ConnectOnionMacClient
 
 final class ChatViewTests: XCTestCase {
@@ -470,7 +471,7 @@ final class ChatViewTests: XCTestCase {
                 configuration: welcomeViewModel.configuration,
                 isConnected: true,
                 connectionSnapshot: welcomeViewModel.connectionSnapshot,
-                areToolsExpanded: true,
+                agentProfile: Self.welcomeProfile(),
                 onSelectPrompt: { _ in }
             )
         )
@@ -488,17 +489,29 @@ final class ChatViewTests: XCTestCase {
                 batchRemaining: [.object(["tool": .string("archive_report")])]
             )
         )
-        let approvalCard = HostedInteractionCard(
-            viewModel: approvalViewModel,
-            conversationWidth: 720,
-            showsApprovalDetails: true,
-            showsApprovalOptions: false
-        )
-        renderView(approvalCard)
         renderView(
-            approvalCard.approvalOptionsPopover,
-            width: 340,
-            height: 220
+            HostedInteractionCard(
+                viewModel: approvalViewModel,
+                conversationWidth: 720,
+                showsApprovalDetails: true,
+                confirmsTrust: true
+            )
+        )
+
+        approvalViewModel.pendingInteraction = .approval(
+            ConnectOnionApprovalRequest(
+                id: "run-command-approval",
+                tool: "run_command",
+                arguments: .object(["command": .string("ls -la")]),
+                description: nil,
+                batchRemaining: []
+            )
+        )
+        renderView(
+            HostedInteractionCard(
+                viewModel: approvalViewModel,
+                conversationWidth: 720
+            )
         )
 
         approvalViewModel.pendingInteraction = .approval(
@@ -517,6 +530,34 @@ final class ChatViewTests: XCTestCase {
                 showsApprovalDetails: true
             )
         )
+    }
+
+    /// An AGENT_PROFILE as the kit decodes it, the same route the real frame takes.
+    private static func welcomeProfile() -> OIPAgentProfile {
+        let frame: [String: JSONValue] = [
+            "type": .string("AGENT_PROFILE"),
+            "skills": .array([
+                .object([
+                    "name": .string("deploy"),
+                    "description": .string("Ship the current branch to production.")
+                ]),
+                .object([
+                    "name": .string("summarise"),
+                    "description": .string("Summarise a document you paste in.")
+                ])
+            ])
+        ]
+        guard case .agentProfile(let profile) = OIPServerFrame.decode(frame) else {
+            preconditionFailure("AGENT_PROFILE did not decode")
+        }
+        return profile
+    }
+
+    @MainActor
+    func testDiffCardStartsOpenUnlessItsCallIsDone() {
+        XCTAssertTrue(FileChangeCard.startsOpen(for: .running))
+        XCTAssertTrue(FileChangeCard.startsOpen(for: .error))
+        XCTAssertFalse(FileChangeCard.startsOpen(for: .done))
     }
 
     @MainActor
