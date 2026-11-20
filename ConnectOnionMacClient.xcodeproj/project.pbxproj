@@ -37,6 +37,7 @@
 		BB0000013000000000000001 /* WalletServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000023000000000000002 /* WalletServiceTests.swift */; };
 		CC0000013000000000000001 /* ConnectOnionRemoteAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000023000000000000002 /* ConnectOnionRemoteAgent.swift */; };
 		CC0000033000000000000003 /* ConnectOnionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000043000000000000004 /* ConnectOnionServiceTests.swift */; };
+		D3F3173A30789DC3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F3173930789DB3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift */; };
 		DD0000013000000000000001 /* ViewModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000023000000000000002 /* ViewModelsTests.swift */; };
 		EE0000013000000000000001 /* ChatViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000023000000000000002 /* ChatViewTests.swift */; };
 		F00000013000000000000001 /* Resources/Fonts in Resources */ = {isa = PBXBuildFile; fileRef = F00000023000000000000002 /* Resources/Fonts */; };
@@ -126,6 +127,7 @@
 		BB0000043000000000000004 /* ConnectOnionMacClientTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ConnectOnionMacClientTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC0000023000000000000002 /* ConnectOnionRemoteAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionRemoteAgent.swift; sourceTree = "<group>"; };
 		CC0000043000000000000004 /* ConnectOnionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionServiceTests.swift; sourceTree = "<group>"; };
+		D3F3173930789DB3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectOnionIdentityStore+PrivateKeyStoring.swift"; sourceTree = "<group>"; };
 		DD0000023000000000000002 /* ViewModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelsTests.swift; sourceTree = "<group>"; };
 		EE0000023000000000000002 /* ChatViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewTests.swift; sourceTree = "<group>"; };
 		F00000023000000000000002 /* Resources/Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/Fonts; sourceTree = "<group>"; };
@@ -320,6 +322,7 @@
 		D00000020000000000000002 /* Networking */ = {
 			isa = PBXGroup;
 			children = (
+				D3F3173930789DB3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift */,
 				34A616252FEBF5F6009B8B1C /* ConnectOnionService.swift */,
 				CC0000023000000000000002 /* ConnectOnionRemoteAgent.swift */,
 				KC0100000000000000000001 /* ConnectOnionEndpointResolver.swift */,
@@ -496,6 +499,7 @@
 				AA0000102FF5C001009B8B1C /* MarkdownMessageView.swift in Sources */,
 				34EE29F02FF546DC006464EB /* BalanceView.swift in Sources */,
 				AA0000072FEBF5F6009B8B1C /* ContentView.swift in Sources */,
+				D3F3173A30789DC3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift in Sources */,
 				1C59CDE5300DE30800E8EC9B /* VoiceInputService.swift in Sources */,
 				AA0000082FEBF5F6009B8B1C /* SidebarView.swift in Sources */,
 				A92000013000000000000001 /* SidebarAgentChatExpansion.swift in Sources */,
