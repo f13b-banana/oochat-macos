@@ -126,3 +126,6 @@ nonisolated struct ConnectOnionIdentity {
         return Hex.encode(try privateKey.signature(for: canonical))
     }
 }
+
+/// All mutable state is guarded by `lock`.
+extension ConnectOnionIdentityStore: @unchecked Sendable {}
