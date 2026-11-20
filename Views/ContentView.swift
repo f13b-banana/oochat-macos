@@ -12,8 +12,6 @@ struct ContentView: View {
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
     @AppStorage("isSidebarVisible") private var isSidebarVisible = true
 
-    @State private var showsOrphanAlert = false
-
     private let sidebarWidth: CGFloat = 300
     private let conversationMaxWidth: CGFloat = 768
     private let conversationHorizontalPadding: CGFloat = 24
@@ -84,22 +82,6 @@ struct ContentView: View {
                 .keyboardShortcut("s", modifiers: [.control, .command])
             }
         }
-        .onChange(of: appViewModel.orphanedSessions) { _, sessions in
-            if !sessions.isEmpty {
-                showsOrphanAlert = true
-            }
-        }
-        .alert(
-            "Unresolved chats",
-            isPresented: $showsOrphanAlert
-        ) {
-            Button("Keep Chats", role: .cancel) {}
-            Button("Discard Chats", role: .destructive) {
-                appViewModel.discardOrphanedSessions()
-            }
-        } message: {
-            Text("\(appViewModel.orphanedSessions.count) chat(s) could not be matched to a current agent and are hidden. Reconnect the agent to restore them, or discard them.")
-        }
     }
 
     @ViewBuilder
@@ -154,7 +136,7 @@ struct ContentView: View {
                     NSWorkspace.shared.open(dockerDesktopURL)
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .controlSize(.regular)
             }
             retryButton(title: "Retry")
 
@@ -174,7 +156,7 @@ struct ContentView: View {
             }
         }
         .buttonStyle(.borderedProminent)
-        .controlSize(.small)
+        .controlSize(.regular)
     }
 
     private func retryButton(title: String) -> some View {
@@ -184,7 +166,7 @@ struct ContentView: View {
             }
         }
         .buttonStyle(.bordered)
-        .controlSize(.small)
+        .controlSize(.regular)
     }
 
     /// Resolves Docker Desktop wherever it is installed, not only
@@ -258,6 +240,11 @@ struct ContentView: View {
                 appViewModel.selection = appViewModel.previousSelection
             }
 
+        case .balance:
+            BalanceView(appViewModel: appViewModel) {
+                appViewModel.selection = appViewModel.previousSelection
+            }
+
         case .none:
             ChooseAgentView(appViewModel: appViewModel)
         }
@@ -304,7 +291,7 @@ struct AgentConnectHomeView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 56, height: 56)
-                    .accessibilityLabel("OpenOnion")
+                    .accessibilityLabel("oo-chat")
 
                 Text("Talk to any agent.")
                     .font(OOFont.headline(size: 48))
@@ -454,7 +441,7 @@ struct ChooseAgentView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 56, height: 56)
-                    .accessibilityLabel("OpenOnion")
+                    .accessibilityLabel("oo-chat")
 
                 Text("Choose an agent")
                     .font(OOFont.headline(size: 36))
