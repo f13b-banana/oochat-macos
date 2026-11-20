@@ -16,7 +16,7 @@
 		34E23F272FF7B7840067A29B /* host_agent.py in Resources */ = {isa = PBXBuildFile; fileRef = 34E23F262FF7B77C0067A29B /* host_agent.py */; };
 		34EE29F02FF546DC006464EB /* BalanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34EE29EF2FF546D1006464EB /* BalanceView.swift */; };
 		436E92B62FF506670078684E /* WalletService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 436E92B52FF506520078684E /* WalletService.swift */; };
-		90F6A3DC3077C9470006E931 /* ConnectOnionKit in Frameworks */ = {isa = PBXBuildFile; productRef = 90F6A3DB3077C9470006E931 /* ConnectOnionKit */; };
+		8226EA2D30788EB80097ECBD /* ConnectOnionKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8226EA2C30788EB80097ECBD /* ConnectOnionKit */; };
 		A10000013000000000000001 /* DockerRuntimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000033000000000000003 /* DockerRuntimeManager.swift */; };
 		A10000023000000000000002 /* docker-compose.yml in Resources */ = {isa = PBXBuildFile; fileRef = A10000043000000000000004 /* docker-compose.yml */; };
 		A90000013000000000000001 /* ConnectOnionLiveHostTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000023000000000000002 /* ConnectOnionLiveHostTests.swift */; };
@@ -180,7 +180,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				90F6A3DC3077C9470006E931 /* ConnectOnionKit in Frameworks */,
+				8226EA2D30788EB80097ECBD /* ConnectOnionKit in Frameworks */,
 				AA0000092FEBF5F6009B8B1C /* ConnectOnion in Frameworks */,
 				AA00000C2FF5C001009B8B1C /* MarkdownUI in Frameworks */,
 				AB0000013000000000000001 /* SwiftMath in Frameworks */,
@@ -214,7 +214,7 @@
 				34A616292FEBF5F6009B8B1C /* ViewModels */,
 				34A6162E2FEBF5F6009B8B1C /* Views */,
 				BB0000063000000000000006 /* ConnectOnionMacClientTests */,
-				90F6A3DA3077C9470006E931 /* Frameworks */,
+				8226EA2B30788EB80097ECBD /* Frameworks */,
 				34A616172FEBF5C6009B8B1C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -265,7 +265,7 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
-		90F6A3DA3077C9470006E931 /* Frameworks */ = {
+		8226EA2B30788EB80097ECBD /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -363,7 +363,7 @@
 				AA00000B2FEBF5F6009B8B1C /* ConnectOnion */,
 				AA00000E2FF5C001009B8B1C /* MarkdownUI */,
 				AB0000033000000000000003 /* SwiftMath */,
-				90F6A3DB3077C9470006E931 /* ConnectOnionKit */,
+				8226EA2C30788EB80097ECBD /* ConnectOnionKit */,
 			);
 			productName = ConnectOnionMacClient;
 			productReference = 34A616162FEBF5C6009B8B1C /* ConnectOnionMacClient.app */;
@@ -421,7 +421,7 @@
 				AA00000A2FEBF5F6009B8B1C /* XCRemoteSwiftPackageReference "connectonion-swift" */,
 				AA00000D2FF5C001009B8B1C /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				AB0000023000000000000002 /* XCRemoteSwiftPackageReference "SwiftMath" */,
-				90F6A3D93077C7EE0006E931 /* XCLocalSwiftPackageReference "Packages/ConnectOnionKit" */,
+				8226EA2A307887210097ECBD /* XCLocalSwiftPackageReference "Packages/ConnectOnionKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 34A616172FEBF5C6009B8B1C /* Products */;
@@ -797,7 +797,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		90F6A3D93077C7EE0006E931 /* XCLocalSwiftPackageReference "Packages/ConnectOnionKit" */ = {
+		8226EA2A307887210097ECBD /* XCLocalSwiftPackageReference "Packages/ConnectOnionKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/ConnectOnionKit;
 		};
@@ -831,9 +831,9 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		90F6A3DB3077C9470006E931 /* ConnectOnionKit */ = {
+		8226EA2C30788EB80097ECBD /* ConnectOnionKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 90F6A3D93077C7EE0006E931 /* XCLocalSwiftPackageReference "Packages/ConnectOnionKit" */;
+			package = 8226EA2A307887210097ECBD /* XCLocalSwiftPackageReference "Packages/ConnectOnionKit" */;
 			productName = ConnectOnionKit;
 		};
 		AA00000B2FEBF5F6009B8B1C /* ConnectOnion */ = {
