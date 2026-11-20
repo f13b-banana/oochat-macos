@@ -15,6 +15,8 @@ struct ChatView: View {
     @State private var detailWidth: CGFloat = 0
     @State private var keyMonitor: Any?
     @State private var isFileDropTargeted = false
+    /// When this chat started connecting; the chip turns "Connecting…" into "Can't connect" after 10 s.
+    @State private var connectingSince: Date?
     @FocusState private var isInputFocused: Bool
     @State private var selectedSkillIndex = 0
     @State private var isKeyboardNavigatingSkills = false
@@ -193,7 +195,7 @@ struct ChatView: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: isChatConnected)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.connectionStatus().isLive)
         .dropDestination(for: URL.self) { urls, _ in
             viewModel.addAttachments(from: urls)
         } isTargeted: { isTargeted in
@@ -416,7 +418,7 @@ struct ChatView: View {
             if !hasStartedConversation {
                 WelcomeHomeView(
                     configuration: viewModel.configuration,
-                    isConnected: viewModel.isConfigurationConnected,
+                    isConnected: viewModel.isConfigurationConnected || viewModel.connectionStatus().isLive,
                     connectionSnapshot: viewModel.connectionSnapshot,
                     agentProfile: viewModel.agentProfile,
                     dashboard: viewModel.dashboard
@@ -445,6 +447,11 @@ struct ChatView: View {
                                         .generatedArtifactStore,
                                     onRetry: {
                                         viewModel.retryAgentMessage(message)
+                                    },
+                                    failure: viewModel.failureByMessageID[message.id],
+                                    canRetryFailedMessage: viewModel.canRetryFailedMessage(message),
+                                    onRetryFailedMessage: {
+                                        viewModel.retryFailedMessage(message)
                                     }
                                 )
                                     .id(message.id)
@@ -862,31 +869,50 @@ struct ChatView: View {
             : "Start voice input"
     }
 
-    private var isChatConnected: Bool {
-        if viewModel.configuration.connectionType == .byAddress {
-            return viewModel.isConfigurationConnected
+    /// The chat's status under the composer, in the same words and colours as iOS.
+    /// Ticks once a second only while connecting, to turn into "Can't connect" at 10 s.
+    private var connectionStatusChip: some View {
+        TimelineView(.periodic(from: .now, by: connectingSince == nil ? 3_600 : 1)) { context in
+            statusChip(
+                viewModel.connectionStatus(
+                    connectingFor: connectingSince.map { context.date.timeIntervalSince($0) } ?? 0
+                )
+            )
         }
-        return viewModel.service.isConnected
+        .onChange(of: viewModel.isConnecting, initial: true) { _, isConnecting in
+            connectingSince = isConnecting ? (connectingSince ?? .now) : nil
+        }
     }
 
-    /// Always-visible status chip shown in the input card's bottom row.
-    private var connectionStatusChip: some View {
-        HStack(spacing: 7) {
-            Circle()
-                .fill(isChatConnected ? AppPalette.success : AppPalette.error)
-                .frame(width: 6, height: 6)
-
-            Text(isChatConnected ? "live" : "error")
-                .font(AppTypography.mono(size: AppFontSize.footnote, weight: .semibold))
-                .foregroundColor(isChatConnected ? AppPalette.success : AppPalette.error)
+    @ViewBuilder
+    private func statusChip(_ status: ChatConnectionStatus) -> some View {
+        let detail = status.detail(agentName: viewModel.configuration.name)
+        let mark = HStack(spacing: 4) {
+            OOStatusDot(label: status.label, tone: status.tone)
+            if status.canRetry {
+                Text("· Retry")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(OOColor.primary)
+            }
         }
-        .help(
-            isChatConnected
-                ? "Connected to the agent"
-                : "Not connected to the agent"
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(isChatConnected ? "Connected" : "Disconnected")
+        .animation(.easeInOut(duration: 0.15), value: status)
+
+        if status.canRetry {
+            Button {
+                viewModel.retryConnection()
+            } label: {
+                mark.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(detail)
+            .accessibilityLabel(detail)
+            .accessibilityHint("Tries to connect again")
+        } else {
+            mark
+                .help(detail)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(detail)
+        }
     }
 
     private func increaseFontSize() {

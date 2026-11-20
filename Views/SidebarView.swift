@@ -236,7 +236,8 @@ struct SidebarView: View {
     private var onlineAgentIndicator: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(OOColor.live)
+                // Green only when something is online, grey at "0 online".
+                .fill(onlineAgentCount > 0 ? OOColor.live : OOColor.inkSecondary)
                 .frame(width: 7, height: 7)
 
             Text("\(onlineAgentCount) online")
