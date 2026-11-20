@@ -18,7 +18,9 @@ class ChatViewModel: ObservableObject {
     @Published var attachmentError: String?
     /// Runtime question or approval awaiting the user's answer; sending and
     /// attaching stay disabled until it resolves.
-    @Published var pendingInteraction: ConnectOnionPendingInteraction?
+    @Published var pendingInteraction: ConnectOnionPendingInteraction? {
+        didSet { reportActivity() }
+    }
     @Published var interactionError: String?
     /// Why each failed message didn't go through. Kept for this run of the app only.
     @Published var failureByMessageID: [UUID: ChatFailure] = [:]
@@ -66,7 +68,9 @@ class ChatViewModel: ObservableObject {
     private var pendingArtifacts: [GeneratedArtifactReference] = []
     private var pendingArtifactWarnings: [String] = []
     private var textBeforeVoiceInput = ""
-    private var activeExecutionRunID: UUID?
+    private var activeExecutionRunID: UUID? {
+        didSet { reportActivity() }
+    }
 
     init(session: ChatSession, configuration: GeneralAgentConfiguration, service: ConnectOnionService, appViewModel: AppViewModel,
          voiceInputService: VoiceInputService? = nil) {
@@ -94,7 +98,36 @@ class ChatViewModel: ObservableObject {
         statusTask?.cancel()
     }
 
+    /// Tells the sidebar whether this chat is waiting on you or working.
+    /// `isRequestActive`: the service's new value, when it's what changed (a @Published sink
+    /// runs before the property updates).
+    private func reportActivity(isRequestActive: Bool? = nil) {
+        let status: SidebarChatStatus?
+        switch pendingInteraction {
+        case .approval:
+            status = .approval
+        // A question, an invite code, a plan or a checkpoint: yours to answer, not to approve.
+        case .askUser, .onboarding, .planReview, .ulwCheckpoint:
+            status = .reply
+        case nil:
+            // Working only while a request is in flight. A late trace event after the reply opens
+            // a run that nothing closes, and must not leave the row saying Working.
+            let isActive = isRequestActive ?? service.isAgentRequestActive
+            status = activeExecutionRunID != nil && isActive ? .working : nil
+        }
+        appViewModel.setLiveActivity(status, for: session.id)
+    }
+
     private func setupBindings() {
+        // dropFirst: the view model is made while the window draws; nothing has changed yet.
+        service.$isAgentRequestActive
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] isActive in
+                self?.reportActivity(isRequestActive: isActive)
+            }
+            .store(in: &cancellables)
+
         service.objectWillChange
             .sink { [weak self] _ in
                 self?.objectWillChange.send()

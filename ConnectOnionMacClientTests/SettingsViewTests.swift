@@ -123,14 +123,11 @@ final class SettingsViewTests: XCTestCase {
         editingSessionState.editingSessionTitle = "Renamed Chat"
         var searchState = SidebarViewInitialState()
         searchState.searchText = "missing agent"
-        var collapsedState = SidebarViewInitialState()
-        collapsedState.isAgentsSectionExpanded = false
         let states = [
             hoveredState,
             editingAgentState,
             editingSessionState,
-            searchState,
-            collapsedState
+            searchState
         ]
 
         for state in states {

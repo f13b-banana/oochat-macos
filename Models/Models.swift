@@ -65,6 +65,14 @@ nonisolated struct ChatSession: Identifiable, Codable, Hashable {
     var title: String
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
+
+    static let defaultTitle = "New chat"
+    /// Chats saved before the copy change say "New Chat".
+    static let legacyDefaultTitles: Set<String> = ["New Chat"]
+
+    var isUntitled: Bool {
+        title == Self.defaultTitle || Self.legacyDefaultTitles.contains(title)
+    }
 }
 
 /// Who produced a `ChatMessage`.

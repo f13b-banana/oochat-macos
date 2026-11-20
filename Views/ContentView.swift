@@ -11,8 +11,8 @@ struct ContentView: View {
     @AppStorage("isDarkMode") private var isDarkMode = false
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
     @AppStorage("isSidebarVisible") private var isSidebarVisible = true
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
-    private let sidebarWidth: CGFloat = 300
     private let conversationMaxWidth: CGFloat = 768
     private let conversationHorizontalPadding: CGFloat = 24
 
@@ -33,33 +33,31 @@ struct ContentView: View {
     }
 
     var body: some View {
-        GeometryReader { windowGeometry in
-            let centeredConversationWidth = conversationWidth(
-                windowWidth: windowGeometry.size.width
-            )
-
-            ZStack {
-                AppBackground()
-
-                HStack(spacing: 0) {
-                    if isSidebarVisible {
-                        SidebarView(appViewModel: appViewModel)
-                            .frame(width: sidebarWidth)
-                            .overlay(alignment: .trailing) {
-                                Rectangle()
-                                    .fill(OOColor.hairline)
-                                    .frame(width: 1)
-                            }
-                            .transition(.move(edge: .leading).combined(with: .opacity))
-                    }
-
-                    detailView(conversationWidth: centeredConversationWidth)
+        // The system split view: the sidebar resizes (220–400 pt), hides with the toolbar
+        // button or ⌃⌘S, and remembers whether it was shown.
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            SidebarView(appViewModel: appViewModel)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 400)
+                // Our own toggle below, so hiding is instant rather than the system slide.
+                .toolbar(removing: .sidebarToggle)
+        } detail: {
+            GeometryReader { detailGeometry in
+                ZStack {
+                    AppBackground()
+                    detailView(conversationWidth: conversationWidth(detailWidth: detailGeometry.size.width))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .overlay(alignment: .top) {
                 dockerRuntimeBanner
             }
+        }
+        .navigationSplitViewStyle(.balanced)
+        .onAppear {
+            columnVisibility = isSidebarVisible ? .all : .detailOnly
+        }
+        .onChange(of: columnVisibility) { _, visibility in
+            isSidebarVisible = visibility != .detailOnly
         }
         .tint(AppPalette.primaryAction)
         .onChange(of: appearanceMode, initial: true) { _, mode in
@@ -71,17 +69,42 @@ struct ContentView: View {
 #endif
         }
         .navigationTitle("")
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    toggleSidebar()
-                } label: {
-                    Image(systemName: "sidebar.left")
-                }
-                .help(isSidebarVisible ? "Hide Sidebar" : "Show Sidebar")
+        .chatToolbar(breadcrumb: breadcrumb)
+        // Pinned beside the traffic lights, so it doesn't move as the sidebar opens and closes.
+        .background(SidebarToggleAccessory(action: toggleSidebar))
+        .background {
+            Button("Toggle Sidebar", action: toggleSidebar)
                 .keyboardShortcut("s", modifiers: [.control, .command])
-            }
+                .hidden()
         }
+    }
+
+    @ViewBuilder
+    private var breadcrumb: some View {
+        if let chat = selectedChat {
+            ChatBreadcrumb(appViewModel: appViewModel, session: chat.session, agent: chat.agent)
+        }
+    }
+
+    /// The system's own sidebar toggle (so the window keeps its size), run with a zero-length
+    /// animation so it snaps instead of sliding: the slide reflowed the chat and the Control
+    /// Center pane every frame.
+    private func toggleSidebar() {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
+        }
+    }
+
+    /// The open chat and its agent, for the toolbar's "agent / chat".
+    private var selectedChat: (session: ChatSession, agent: GeneralAgentConfiguration)? {
+        guard case .session(let sessionID) = appViewModel.selection,
+              let session = appViewModel.sessions.first(where: { $0.id == sessionID }),
+              let agent = appViewModel.configuration(for: session) else {
+            return nil
+        }
+        return (session, agent)
     }
 
     @ViewBuilder
@@ -180,12 +203,6 @@ struct ContentView: View {
     private static let dockerDesktopDownloadAddress =
         "https://www.docker.com/products/docker-desktop/"
 
-    private func toggleSidebar() {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            isSidebarVisible.toggle()
-        }
-    }
-
     @ViewBuilder
     private func detailView(conversationWidth: CGFloat) -> some View {
         if appViewModel.configurations.isEmpty,
@@ -250,15 +267,8 @@ struct ContentView: View {
         }
     }
 
-    private func conversationWidth(windowWidth: CGFloat) -> CGFloat {
-        // Match Codex's centered reading column: keep a stable 768pt width
-        // whenever possible and shrink only when the detail pane is narrower.
-        let sidebarLayoutWidth = isSidebarVisible ? sidebarWidth : 0
-        let detailWidth = windowWidth - sidebarLayoutWidth
-        let safeWidth = max(
-            0,
-            detailWidth - conversationHorizontalPadding * 2
-        )
+    private func conversationWidth(detailWidth: CGFloat) -> CGFloat {
+        let safeWidth = max(0, detailWidth - conversationHorizontalPadding * 2)
         return min(conversationMaxWidth, safeWidth)
     }
 
@@ -698,4 +708,249 @@ private struct EmptyDetailView: View {
 
 #Preview {
     ContentView()
+}
+
+private extension View {
+    /// "agent / chat" as plain text, as Claude and Xcode show a title. On macOS 26 toolbar items
+    /// otherwise sit in a glass capsule.
+    @ViewBuilder
+    func chatToolbar<Crumb: View>(breadcrumb: Crumb) -> some View {
+        if #available(macOS 26.0, *) {
+            toolbar {
+                ToolbarItem(placement: .navigation) {
+                    breadcrumb
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
+        } else {
+            toolbar {
+                ToolbarItem(placement: .navigation) {
+                    breadcrumb
+                }
+            }
+        }
+    }
+}
+
+/// The sidebar toggle as a titlebar accessory right after the traffic lights, as in Claude. A
+/// toolbar item would ride along with the split view's columns and jump when the sidebar hides.
+struct SidebarToggleAccessory: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            context.coordinator.install(in: view.window, action: action)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    @MainActor
+    final class Coordinator {
+        private var accessory: NSTitlebarAccessoryViewController?
+
+        func install(in window: NSWindow?, action: @escaping () -> Void) {
+            guard accessory == nil, let window else {
+                return
+            }
+            let host = NSHostingView(rootView: SidebarToggleButton(action: action))
+            host.frame = NSRect(x: 0, y: 0, width: 44, height: 32)
+            let controller = NSTitlebarAccessoryViewController()
+            controller.view = host
+            controller.layoutAttribute = .leading
+            window.addTitlebarAccessoryViewController(controller)
+            accessory = controller
+        }
+    }
+}
+
+/// A quiet square that lights on hover, like Claude's, not a glass bubble.
+private struct SidebarToggleButton: View {
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(OOColor.inkSecondary)
+                .frame(width: 32, height: 28)
+                .background(
+                    isHovered ? OOColor.hover : Color.clear,
+                    in: RoundedRectangle(cornerRadius: OORadius.large, style: .continuous)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help("Toggle Sidebar (⌃⌘S)")
+        .accessibilityLabel("Toggle Sidebar")
+        .padding(.leading, OOSpace.small)
+    }
+}
+
+/// "my-agent / Hello" in the toolbar, as in Claude. Click either name to rename it in place:
+/// Return saves; Esc or clicking anywhere else puts the old name back.
+struct ChatBreadcrumb: View {
+    @ObservedObject var appViewModel: AppViewModel
+    let session: ChatSession
+    let agent: GeneralAgentConfiguration
+
+    private enum Part: Hashable {
+        case agent
+        case chat
+    }
+
+    @State private var editing: Part?
+    @State private var draft = ""
+    @State private var hovered: Part?
+    @FocusState private var focused: Part?
+    @State private var clickMonitor: Any?
+
+    var body: some View {
+        HStack(spacing: OOSpace.tiny) {
+            name(agent.name, part: .agent, color: OOColor.inkSecondary, weight: .regular)
+            Text("/")
+                .foregroundStyle(OOColor.inkTertiary)
+                .accessibilityHidden(true)
+            name(session.title, part: .chat, color: OOColor.ink, weight: .medium)
+        }
+        .font(OOSidebarMetrics.titleFont)
+        .frame(maxWidth: 480, alignment: .leading)
+        .onChange(of: focused) { _, newValue in
+            // Focus moving to another field (the composer, search) cancels too.
+            if editing != nil && newValue == nil {
+                cancel()
+            }
+        }
+        .onChange(of: session.id) {
+            cancel()
+        }
+        .onDisappear {
+            stopWatchingClicks()
+        }
+    }
+
+    @ViewBuilder
+    private func name(_ text: String, part: Part, color: Color, weight: Font.Weight) -> some View {
+        if editing == part {
+            TextField(part == .agent ? "Agent name" : "Chat name", text: $draft)
+                .textFieldStyle(.plain)
+                .fontWeight(weight)
+                .foregroundStyle(OOColor.ink)
+                .focused($focused, equals: part)
+                .onSubmit(commit)
+                .onExitCommand(perform: cancel)
+                .padding(.horizontal, OOSpace.tiny + 2)
+                .frame(minWidth: 120, maxWidth: 320, minHeight: 24)
+                .background(OOColor.surface, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(OOColor.primary, lineWidth: 1)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+        } else {
+            Button {
+                startEditing(part, from: text)
+            } label: {
+                Text(text)
+                    .fontWeight(weight)
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.horizontal, OOSpace.tiny + 2)
+                    .frame(minHeight: 24)
+                    // A quiet hover says it can be clicked, without looking like a button at rest.
+                    .background(
+                        hovered == part ? OOColor.hover : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    )
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovering in
+                hovered = isHovering ? part : (hovered == part ? nil : hovered)
+            }
+            .help(part == .agent ? "Rename agent" : "Rename chat")
+            .accessibilityLabel(text)
+            .accessibilityHint(part == .agent ? "Renames the agent" : "Renames the chat")
+        }
+    }
+
+    private func startEditing(_ part: Part, from text: String) {
+        draft = text
+        editing = part
+        DispatchQueue.main.async {
+            focused = part
+        }
+        watchClicks()
+    }
+
+    /// A click on the chat or sidebar doesn't take focus on the Mac, so the field would never
+    /// lose it. Watch the window's clicks while editing: anything outside the field cancels.
+    private func watchClicks() {
+        stopWatchingClicks()
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
+            if !Self.isInsideEditedField(event) {
+                DispatchQueue.main.async {
+                    cancel()
+                }
+            }
+            return event
+        }
+    }
+
+    private func stopWatchingClicks() {
+        if let clickMonitor {
+            NSEvent.removeMonitor(clickMonitor)
+        }
+        clickMonitor = nil
+    }
+
+    /// True when the click lands on the text being edited (the window's field editor).
+    private static func isInsideEditedField(_ event: NSEvent) -> Bool {
+        guard let window = event.window,
+              let frameView = window.contentView?.superview,
+              let hit = frameView.hitTest(frameView.convert(event.locationInWindow, from: nil)) else {
+            return false
+        }
+        if let textView = hit as? NSTextView {
+            return textView.isFieldEditor && window.firstResponder === textView
+        }
+        return false
+    }
+
+    private func commit() {
+        guard let part = editing else {
+            return
+        }
+        editing = nil
+        stopWatchingClicks()
+        switch part {
+        case .agent:
+            let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty && name != agent.name {
+                appViewModel.renameAgent(agent, to: name)
+            }
+        case .chat:
+            if draft != session.title {
+                appViewModel.renameSession(session, to: draft)
+            }
+        }
+    }
+
+    private func cancel() {
+        guard editing != nil else {
+            return
+        }
+        editing = nil
+        focused = nil
+        stopWatchingClicks()
+    }
 }

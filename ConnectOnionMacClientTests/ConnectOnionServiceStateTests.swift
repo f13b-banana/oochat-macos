@@ -558,6 +558,43 @@ extension ConnectOnionServiceTests {
         XCTAssertEqual(savedMessages.last?.usage, usage)
     }
 
+    // A bash approval arrives as an ack, a tool call and approval_needed back to back. Events
+    // sent with no gap between them must all reach the chat: a stream with no buffer keeps only
+    // the first one sent while the previous is still being handled.
+    @MainActor
+    func testChatKeepsEveryEventInABurst() async {
+        let appViewModel = AppViewModel(storage: makeIsolatedDefaults())
+        let configuration = GeneralAgentConfiguration(
+            name: "Main Agent",
+            connectionType: .byAddress,
+            addressConfiguration: AgentAddressConfiguration(
+                agentAddress: "0x" + String(repeating: "48", count: 32)
+            )
+        )
+        let session = ChatSession(agentConfigId: configuration.id, title: "Burst")
+        let service = ConnectOnionService(conversationID: session.id)
+        let viewModel = ChatViewModel(
+            session: session,
+            configuration: configuration,
+            service: service,
+            appViewModel: appViewModel
+        )
+
+        func agentReplies() -> [String] {
+            viewModel.messages.filter { $0.role == .agent }.map(\.content)
+        }
+
+        // Events reach the chat through a Task, so wait. One first, so the chat is listening;
+        // the two after it come with no gap.
+        service.incomingEvents.send(.output("one"))
+        await waitUntil { agentReplies().count == 1 }
+        service.incomingEvents.send(.output("two"))
+        service.incomingEvents.send(.output("three"))
+        await waitUntil { agentReplies().count == 3 }
+
+        XCTAssertEqual(agentReplies(), ["one", "two", "three"])
+    }
+
     // MARK: - Redo the latest turn in place
 
     @MainActor
