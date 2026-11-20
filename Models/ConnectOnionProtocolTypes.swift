@@ -347,6 +347,7 @@ nonisolated enum ConnectOnionPendingInteraction: Hashable, Sendable {
 nonisolated enum ConnectOnionTransportEvent: Sendable {
     case output(String)
     case usage(ChatUsageSummary)
+    case agentProfile(OIPAgentProfile)
     case executionItem(ExecutionItem)
     case agentImage(String)
     case agentArtifact(GeneratedArtifactPayload)

@@ -22,6 +22,7 @@ class ChatViewModel: ObservableObject {
     @Published var incompatibility: OIPHandshake.Incompatibility?
     @Published var isSubmittingInteraction = false
     @Published private(set) var latestUsage: ChatUsageSummary?
+    @Published private(set) var agentProfile: OIPAgentProfile?
     /// Set after an interrupt so every trailing event from that cancelled run
     /// is discarded instead of reaching the transcript.
     @Published private(set) var isDiscardingInterruptedEvents = false
@@ -146,6 +147,9 @@ class ChatViewModel: ObservableObject {
 
         case .usage(let usage):
             pendingUsage = usage
+
+        case .agentProfile(let profile):
+            agentProfile = profile
 
         case .executionItem(let item):
             upsertExecutionItem(item)

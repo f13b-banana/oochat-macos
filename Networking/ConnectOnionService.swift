@@ -24,7 +24,7 @@ final class ConnectOnionService: ObservableObject {
     /// Set optimistically once a target is accepted, before the probe completes.
     @Published var isConnected = false
     @Published var connectionError: String?
-    @Published var hostedAgentStatus = "Disconnected"
+    @Published var hostedAgentStatus = ConnectOnionService.notConnected
     @Published var hostedAgentStatusDetail: String?
     @Published var isHostedAgentStatusLive = false
     @Published var hostedFilesystemEnabled = false
@@ -50,6 +50,12 @@ final class ConnectOnionService: ObservableObject {
     @Published private(set) var isInterruptEscalating = false
     private var interruptEscalationTask: Task<Void, Never>?
 
+    /// Session words come from the CO package so both apps say the same thing
+    static let notConnected = SessionStatusLabel.text(
+        state: .idle,
+        hasBookmark: false,
+        hostStatus: nil
+    )
     /// Single outbound stream of transport events (output, errors, approvals).
     let incomingEvents = PassthroughSubject<ConnectOnionTransportEvent, Never>()
 
@@ -113,7 +119,12 @@ final class ConnectOnionService: ObservableObject {
             initialRemoteSessionID
         )
         remoteAgentClient = client
-        hostedAgentStatus = "Resolving"
+        hostedAgentStatus = SessionStatusLabel.text(
+            state:
+                .connecting(attempt: 0),
+                hasBookmark: false,
+                hostStatus: nil
+        )
         hostedAgentStatusDetail = nil
         isHostedAgentStatusLive = false
         hostedFilesystemEnabled = false
@@ -160,6 +171,22 @@ final class ConnectOnionService: ObservableObject {
                     )
                     self.isAgentRequestActive = false
                     self.isInterruptRequested = false
+                } else {
+                    // Fetch the authenticated profile without sending INPUT.
+                    // This is best-effort: failure must not mark the agent offline.
+                    do {
+                        try await client.loadAgentProfile(
+                            onEvent: { [weak self] event in
+                                guard let self,
+                                      self.remoteAgentClient === client else {
+                                    return
+                                }
+                                self.emit(event)
+                            }
+                        )
+                    } catch {
+                        // Keep using the public agent information if this fails.
+                    }
                 }
             } catch {
                 guard let self, self.remoteAgentClient === client else { return }
@@ -172,7 +199,7 @@ final class ConnectOnionService: ObservableObject {
 
     func disconnect() {
         stopRemoteAgent()
-        hostedAgentStatus = "Disconnected"
+        hostedAgentStatus = Self.notConnected
         hostedAgentStatusDetail = nil
         isHostedAgentStatusLive = false
         hostedFilesystemEnabled = false
@@ -466,7 +493,7 @@ final class ConnectOnionService: ObservableObject {
 
     private func setConnectionFailure(_ message: String) {
         stopRemoteAgent()
-        hostedAgentStatus = "Disconnected"
+        hostedAgentStatus = Self.notConnected
         hostedAgentStatusDetail = nil
         isHostedAgentStatusLive = false
         hostedFilesystemEnabled = false
