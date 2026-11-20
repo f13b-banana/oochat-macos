@@ -41,8 +41,13 @@ class AppViewModel: ObservableObject {
         didSet {
             pruneEmptySessions()
             rememberSelection()
+            // Leaving a chat closes its connection, so its Approve or Working no longer holds.
+            liveActivity = liveActivity.filter { selection == .session($0.key) }
         }
     }
+    /// Approve or Working for the open chat, reported by its ChatViewModel. The Mac keeps only
+    /// the open chat connected, so no other chat can be waiting or working.
+    @Published private(set) var liveActivity: [UUID: SidebarChatStatus] = [:]
     /// Bumped on every explicit history selection so views can re-focus the
     /// session even when the selection value itself did not change.
     @Published private(set) var sessionSelectionRevision = 0
@@ -155,7 +160,7 @@ class AppViewModel: ObservableObject {
             agentConfigId: config.id,
             agentIdentity: config.agentIdentity,
             remoteSessionID: sessionID.uuidString.lowercased(),
-            title: "New Chat"
+            title: ChatSession.defaultTitle
         )
         sessions.append(newSession)
         selection = .session(newSession.id)
@@ -277,15 +282,15 @@ class AppViewModel: ObservableObject {
 
     /// Titles the session from its first message, but only while it still
     /// shows the placeholder title.
+    /// Names an untitled chat once, from its first real message (Kit ChatTitle, as on iOS): a
+    /// /command or a blank message leaves it untitled so the next real message names it.
     func updateSessionTitle(_ session: ChatSession, with message: String) {
-        guard session.title == "New Chat",
-              let index = sessions.firstIndex(where: { $0.id == session.id }) else {
+        guard let index = sessions.firstIndex(where: { $0.id == session.id }),
+              sessions[index].isUntitled,
+              let title = ChatTitle.from(message) else {
             return
         }
-
-        let trimmedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = String(trimmedMessage.prefix(40))
-        sessions[index].title = title.isEmpty ? "New Chat" : title
+        sessions[index].title = title
     }
 
     func renameSession(_ session: ChatSession, to title: String) {
@@ -294,7 +299,7 @@ class AppViewModel: ObservableObject {
         }
 
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        sessions[index].title = trimmedTitle.isEmpty ? "New Chat" : trimmedTitle
+        sessions[index].title = trimmedTitle.isEmpty ? ChatSession.defaultTitle : trimmedTitle
     }
 
     func renameAgent(_ configuration: GeneralAgentConfiguration, to name: String) {
@@ -859,7 +864,7 @@ class AppViewModel: ObservableObject {
                 updatedSessions[existingIndex].agentIdentity =
                     configuration.agentIdentity
                 updatedSessions[existingIndex].updatedAt = remoteUpdatedAt
-                if updatedSessions[existingIndex].title == "New Chat" {
+                if updatedSessions[existingIndex].isUntitled {
                     updatedSessions[existingIndex].title = Self.title(
                         for: projected
                     )
@@ -1006,15 +1011,12 @@ class AppViewModel: ObservableObject {
         return collapsed
     }
 
+    /// A chat from the host is named the same way: its first real message, never a /command.
     private static func title(for messages: [ChatMessage]) -> String {
-        guard let firstUserMessage = messages.first(where: { $0.role == .user })
-        else {
-            return "Imported Chat"
-        }
-        let title = firstUserMessage.content.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
-        return title.isEmpty ? "Imported Chat" : String(title.prefix(40))
+        messages.lazy
+            .filter { $0.role == .user }
+            .compactMap { ChatTitle.from($0.content) }
+            .first ?? "Imported Chat"
     }
 
     /// Accepts seconds or milliseconds; implausibly large values are assumed
@@ -1224,6 +1226,35 @@ func preservingLocalMetadata(
     }
 
     return merged
+}
+
+// MARK: - Sidebar status
+
+/// Kept out of the class body (type length): what the sidebar says each chat is doing.
+extension AppViewModel {
+    func setLiveActivity(_ status: SidebarChatStatus?, for sessionID: UUID) {
+        guard liveActivity[sessionID] != status else {
+            return
+        }
+        liveActivity[sessionID] = status
+    }
+
+    /// What each chat's sidebar row says instead of its time: the open chat's live status, or
+    /// Not sent for any chat whose last message from you failed (that's saved, so it lasts).
+    var sidebarStatuses: [UUID: SidebarChatStatus] {
+        var lastSent: [UUID: ChatMessage] = [:]
+        for message in messages where message.role == .user {
+            lastSent[message.sessionId] = message
+        }
+        var statuses: [UUID: SidebarChatStatus] = [:]
+        for (sessionID, message) in lastSent where message.status == .error {
+            statuses[sessionID] = .notSent
+        }
+        for (sessionID, status) in liveActivity {
+            statuses[sessionID] = SidebarChatStatus.mostUrgent([status] + [statuses[sessionID]].compactMap { $0 })
+        }
+        return statuses
+    }
 }
 
 extension AppViewModel {

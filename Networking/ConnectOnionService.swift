@@ -173,10 +173,10 @@ final class ConnectOnionService: ObservableObject {
                     self.isAgentRequestActive = true
                     self.isInterruptRequested = false
                     await client.recoverIfNeeded(
-                        onUpdate: { [weak self] update in
+                        onUpdate: { @MainActor [weak self] update in
                             self?.apply(update)
                         },
-                        onEvent: { [weak self] event in
+                        onEvent: { @MainActor [weak self] event in
                             self?.emit(event)
                         }
                     )
@@ -187,7 +187,7 @@ final class ConnectOnionService: ObservableObject {
                     // This is best-effort: failure must not mark the agent offline.
                     do {
                         try await client.loadAgentProfile(
-                            onEvent: { [weak self] event in
+                            onEvent: { @MainActor [weak self] event in
                                 guard let self,
                                       self.remoteAgentClient === client else {
                                     return
@@ -302,10 +302,10 @@ final class ConnectOnionService: ObservableObject {
             let response = try await remoteAgentClient.send(
                 prompt: message,
                 files: files,
-                onUpdate: { [weak self] update in
+                onUpdate: { @MainActor [weak self] update in
                     self?.apply(update)
                 },
-                onEvent: { [weak self] event in
+                onEvent: { @MainActor [weak self] event in
                     guard let self, !self.isInterruptRequested else { return }
                     self.emit(event)
                 }
@@ -467,10 +467,10 @@ final class ConnectOnionService: ObservableObject {
                 isInterruptRequested = false
             }
             await remoteAgentClient.recoverIfNeeded(
-                onUpdate: { [weak self] update in
+                onUpdate: { @MainActor [weak self] update in
                     self?.apply(update)
                 },
-                onEvent: { [weak self] event in
+                onEvent: { @MainActor [weak self] event in
                     self?.emit(event)
                 }
             )

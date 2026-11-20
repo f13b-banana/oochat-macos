@@ -227,20 +227,25 @@ final class ViewModelsTests: XCTestCase {
             session.remoteSessionID,
             session.id.uuidString.lowercased()
         )
-        XCTAssertEqual(session.title, "New Chat")
+        XCTAssertEqual(session.title, "New chat")
         XCTAssertEqual(viewModel.selection, .session(session.id))
+
+        viewModel.updateSessionTitle(session, with: "/help")
+        XCTAssertEqual(viewModel.sessions[0].title, "New chat", "a slash command never names a chat")
 
         viewModel.updateSessionTitle(
             session,
             with: "  This message is deliberately longer than forty characters.  "
         )
-        XCTAssertEqual(viewModel.sessions[0].title.count, 40)
-        XCTAssertTrue(viewModel.sessions[0].title.hasPrefix("This message"))
+        XCTAssertEqual(viewModel.sessions[0].title, "This message is deliberately longer than forty characters.")
+
+        viewModel.updateSessionTitle(viewModel.sessions[0], with: "A later message")
+        XCTAssertEqual(viewModel.sessions[0].title, "This message is deliberately longer than forty characters.", "named once")
 
         viewModel.renameSession(viewModel.sessions[0], to: "  Renamed chat  ")
         XCTAssertEqual(viewModel.sessions[0].title, "Renamed chat")
         viewModel.renameSession(viewModel.sessions[0], to: " \n ")
-        XCTAssertEqual(viewModel.sessions[0].title, "New Chat")
+        XCTAssertEqual(viewModel.sessions[0].title, "New chat")
     }
 
     @MainActor
