@@ -500,3 +500,215 @@ extension ConnectOnionRemoteAgentTests {
         XCTAssertEqual(try second.sentJSONObjects().compactMap { $0["type"] as? String }, ["CONNECT"])
     }
 }
+
+extension ConnectOnionRemoteAgentTests {
+    func testResumeFailsOverToTheRelayWhenTheDirectEndpointDies() async throws {
+        let address = makeAddress("a4")
+        let directInfoCalls = LockedCounter()
+
+        let resolver = makeResolver { request in
+            switch request.url?.host {
+            case "relay.test":
+                return (
+                    makeHTTPResponse(for: request, statusCode: 200),
+                    try makeJSONData(["online": true, "endpoints": ["https://direct.test"]])
+                )
+            default:
+                // The direct host answers the first lookup, then goes away with its socket.
+                guard directInfoCalls.increment() == 1 else {
+                    return (makeHTTPResponse(for: request, statusCode: 503), Data())
+                }
+                return (
+                    makeHTTPResponse(for: request, statusCode: 200),
+                    try makeJSONData(["name": "Failover Agent", "address": address])
+                )
+            }
+        }
+
+        let socketURLs = LockedURLs()
+        let relaySocket = try ScriptedWebSocketTask(events: [
+            ["type": "CONNECTED", "status": "connected", "session_id": "failover-session"],
+            ["type": "OUTPUT", "result": "answered through the relay"]
+        ])
+
+        let client = ConnectOnionRemoteAgentClient(
+            configuredTarget: address,
+            conversationID: nil,
+            resolver: resolver,
+            identityStore: makeEphemeralIdentityStore(),
+            webSocketFactory: { url in
+                socketURLs.append(url)
+                guard url.host == "relay.test" else {
+                    return ScriptedWebSocketTask(receiveError: ConnectOnionRemoteError.connectionClosed)
+                }
+                return relaySocket
+            },
+            sleep: { _ in }
+        )
+
+        let recorder = RemoteProtocolRecorder()
+        let output = try await client.send(
+            prompt: "Keep going",
+            onUpdate: { await recorder.record($0) },
+            onEvent: { await recorder.record($0) }
+        )
+
+        XCTAssertEqual(output, "answered through the relay")
+        XCTAssertEqual(
+            socketURLs.values.map(\.absoluteString),
+            ["wss://direct.test/ws", relayWebSocketURL.absoluteString]
+        )
+
+        let resolved = try await client.probe()
+        XCTAssertFalse(resolved.isDirect, "the next send starts on the relay too")
+
+        let updates = await recorder.snapshot().updates
+        XCTAssertTrue(updates.contains { $0.hasPrefix("Reconnecting:") })
+    }
+}
+
+private final class LockedURLs: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [URL] = []
+
+    var values: [URL] {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
+    }
+
+    func append(_ url: URL) {
+        lock.lock()
+        stored.append(url)
+        lock.unlock()
+    }
+}
+
+// Opening a chat: the profile visit after the probe also reads the Control Center the host sends
+// after AGENT_PROFILE (its starter page when the agent has no dashboard.html), as O Chat's page does.
+extension ConnectOnionRemoteAgentTests {
+    func testTheProfileVisitAlsoReadsTheControlCenterAndSendsNoInput() async throws {
+        let address = makeAddress("a6")
+        let resolver = makeResolver { request in
+            (
+                makeHTTPResponse(for: request, statusCode: 200),
+                try makeJSONData(["name": "Starter Agent", "address": address])
+            )
+        }
+        let socket = try ScriptedWebSocketTask(events: [
+            ["type": "CONNECTED", "status": "new", "session_id": "open-session"],
+            ["type": "AGENT_PROFILE", "name": "oo"],
+            ["type": "DASHBOARD_SNAPSHOT", "html": "<main>starter</main>", "session_id": "open-session"]
+        ])
+        let client = ConnectOnionRemoteAgentClient(
+            configuredTarget: "https://agent.test",
+            conversationID: nil,
+            resolver: resolver,
+            identityStore: makeEphemeralIdentityStore(),
+            webSocketFactory: { _ in socket },
+            sleep: { _ in }
+        )
+        let recorder = RemoteProtocolRecorder()
+        try await client.loadAgentProfile(onEvent: { await recorder.record($0) })
+
+        let events = await recorder.snapshot().events
+        XCTAssertEqual(
+            events.filter { $0 == "agent_profile" || $0.hasPrefix("dashboard") },
+            ["agent_profile", "dashboard:20"]
+        )
+        XCTAssertEqual(
+            try socket.sentJSONObjects().compactMap { $0["type"] as? String },
+            ["CONNECT"]
+        )
+        XCTAssertTrue(socket.wasCancelled, "the socket is closed once the page has arrived")
+
+        let pending = await client.hasPendingExecution()
+        XCTAssertFalse(pending)
+    }
+
+    func testAHostThatSendsNoSnapshotStillGivesTheProfile() async throws {
+        let address = makeAddress("a7")
+        let resolver = makeResolver { request in
+            (
+                makeHTTPResponse(for: request, statusCode: 200),
+                try makeJSONData(["name": "Old Agent", "address": address])
+            )
+        }
+        let socket = try ScriptedWebSocketTask(events: [
+            ["type": "CONNECTED", "status": "new", "session_id": "old-host"],
+            ["type": "AGENT_PROFILE", "name": "old"]
+        ])
+        let client = ConnectOnionRemoteAgentClient(
+            configuredTarget: "https://agent.test",
+            conversationID: nil,
+            resolver: resolver,
+            identityStore: makeEphemeralIdentityStore(),
+            webSocketFactory: { _ in socket },
+            sleep: { _ in }
+        )
+        let recorder = RemoteProtocolRecorder()
+        try await client.loadAgentProfile(onEvent: { await recorder.record($0) })
+
+        let snapshot = await recorder.snapshot()
+        XCTAssertTrue(snapshot.events.contains("agent_profile"))
+        XCTAssertFalse(snapshot.events.contains { $0.hasPrefix("dashboard") })
+        XCTAssertFalse(snapshot.events.contains { $0.hasPrefix("error") }, "no snapshot is not an error")
+        XCTAssertTrue(socket.wasCancelled)
+    }
+
+    func testTheProfileVisitSkipsControlCenterFramesThatComeBeforeTheProfile() async throws {
+        let address = makeAddress("a8")
+        let resolver = makeResolver { request in
+            (
+                makeHTTPResponse(for: request, statusCode: 200),
+                try makeJSONData(["name": "Ordered Agent", "address": address])
+            )
+        }
+        let socket = try ScriptedWebSocketTask(events: [
+            ["type": "CONNECTED", "status": "new", "session_id": "ordered-host"],
+            ["type": "CONTROL_CENTER_STATE", "state": "ready"],
+            ["type": "CONTROL_CENTER_APP", "html": "<main>app</main>"],
+            ["type": "AGENT_PROFILE", "name": "oo"],
+            ["type": "DASHBOARD_SNAPSHOT", "html": "<main>starter</main>", "session_id": "ordered-host"]
+        ])
+        let client = ConnectOnionRemoteAgentClient(
+            configuredTarget: "https://agent.test",
+            conversationID: nil,
+            resolver: resolver,
+            identityStore: makeEphemeralIdentityStore(),
+            webSocketFactory: { _ in socket },
+            sleep: { _ in }
+        )
+        let recorder = RemoteProtocolRecorder()
+        try await client.loadAgentProfile(onEvent: { await recorder.record($0) })
+
+        let events = await recorder.snapshot().events
+        XCTAssertEqual(
+            events.filter { $0 == "agent_profile" || $0.hasPrefix("dashboard") },
+            ["agent_profile", "dashboard:20"]
+        )
+    }
+}
+
+extension ConnectOnionRemoteAgentTests {
+    func testControlCenterWidthStaysBetweenItsBounds() {
+        XCTAssertEqual(ControlCenterPaneWidth.initial, 500)
+        XCTAssertEqual(ControlCenterPaneWidth.clamped(100), 320)
+        XCTAssertEqual(ControlCenterPaneWidth.clamped(640), 640)
+        XCTAssertEqual(ControlCenterPaneWidth.clamped(2_000), 900)
+    }
+
+    func testTheControlCenterNeverSqueezesTheChatBelowItsMinimum() {
+        // 900 pt window with the 300 pt sidebar open: 600 pt of detail. The pane gives way, the chat keeps 360.
+        XCTAssertEqual(ControlCenterPaneWidth.fitted(500, in: 600), 234)
+        // Sidebar hidden: the default pane fits as it is.
+        XCTAssertEqual(ControlCenterPaneWidth.fitted(500, in: 900), 500)
+        // A saved 900 pt pane is cut down to leave the chat its minimum (900 - 6 - 360).
+        XCTAssertEqual(ControlCenterPaneWidth.fitted(900, in: 900), 534)
+        // The pane keeps its own 320 pt minimum while there is room for it (686 - 6 - 360).
+        XCTAssertEqual(ControlCenterPaneWidth.fitted(100, in: 1_200), 320)
+        XCTAssertEqual(ControlCenterPaneWidth.fitted(500, in: 686), 320)
+        // Never negative.
+        XCTAssertEqual(ControlCenterPaneWidth.fitted(500, in: 300), 0)
+    }
+}
