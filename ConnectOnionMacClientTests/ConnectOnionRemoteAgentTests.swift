@@ -176,10 +176,10 @@ final class ConnectOnionRemoteAgentTests: XCTestCase {
         )
         XCTAssertEqual(laterTarget.targetSummary, "person@example.test")
         XCTAssertTrue(
-            laterTarget.plainEnglishExplanation.contains("person@example.test")
+            laterTarget.kitSummary.contains("person@example.test")
         )
         XCTAssertEqual(
-            request("reply_to_message").plainEnglishExplanation,
+            request("reply_to_message").kitSummary,
             "Send information to an external recipient."
         )
 
@@ -187,35 +187,35 @@ final class ConnectOnionRemoteAgentTests: XCTestCase {
             request(
                 "delete_file",
                 arguments: ["path": .string("/tmp/report.txt")]
-            ).plainEnglishExplanation,
-            request("remove_item").plainEnglishExplanation,
+            ).kitSummary,
+            request("remove_item").kitSummary,
             request(
                 "write_file",
                 arguments: ["filename": .string("/tmp/output.txt")]
-            ).plainEnglishExplanation,
-            request("write_file").plainEnglishExplanation,
+            ).kitSummary,
+            request("write_file").kitSummary,
             request(
                 "edit_file",
                 arguments: ["filepath": .string("/tmp/source.swift")]
-            ).plainEnglishExplanation,
-            request("patch_resource").plainEnglishExplanation,
+            ).kitSummary,
+            request("patch_resource").kitSummary,
             request(
                 "create_file",
                 arguments: ["target": .string("/tmp/new.txt")]
-            ).plainEnglishExplanation,
-            request("create_resource").plainEnglishExplanation,
+            ).kitSummary,
+            request("create_resource").kitSummary,
             request(
                 "rename_file",
                 arguments: ["file_path": .string("/tmp/old.txt")]
-            ).plainEnglishExplanation,
-            request("move_resource").plainEnglishExplanation,
+            ).kitSummary,
+            request("move_resource").kitSummary,
             request(
                 "upload_file",
                 arguments: ["url": .string("https://uploads.test")]
-            ).plainEnglishExplanation,
-            request("upload_file").plainEnglishExplanation,
-            request("click_element").plainEnglishExplanation,
-            request("custom_tool").plainEnglishExplanation
+            ).kitSummary,
+            request("upload_file").kitSummary,
+            request("click_element").kitSummary,
+            request("custom_tool").kitSummary
         ]
         XCTAssertEqual(explanations.count, 14)
         XCTAssertTrue(explanations[0].contains("report.txt"))
@@ -256,7 +256,7 @@ final class ConnectOnionRemoteAgentTests: XCTestCase {
                 arguments: ["command": .string(command)]
             )
             XCTAssertTrue(
-                approval.plainEnglishExplanation.contains(expectedText),
+                approval.kitSummary.contains(expectedText),
                 "Expected \(command) to contain \(expectedText)"
             )
         }
@@ -508,5 +508,13 @@ extension ConnectOnionRemoteAgentTests {
 
         XCTAssertTrue(events.contains("dashboard:11"))
         XCTAssertTrue(events.contains("dashboard_too_large:\(OIPDashboard.clientCapBytes + 1)"))
+    }
+}
+
+/// The Mac card titles approvals with the Kit summary, so these tests check that the Kit keeps
+/// the sentences the Mac app used to build itself.
+extension ConnectOnionApprovalRequest {
+    var kitSummary: String {
+        OOApprovalDisclosure.summary(tool: tool, arguments: arguments.objectValue ?? [:])
     }
 }

@@ -493,7 +493,6 @@ final class ChatViewTests: XCTestCase {
             HostedInteractionCard(
                 viewModel: approvalViewModel,
                 conversationWidth: 720,
-                showsApprovalDetails: true,
                 confirmsTrust: true
             )
         )
@@ -526,8 +525,7 @@ final class ChatViewTests: XCTestCase {
         renderView(
             HostedInteractionCard(
                 viewModel: approvalViewModel,
-                conversationWidth: 720,
-                showsApprovalDetails: true
+                conversationWidth: 720
             )
         )
     }
@@ -551,6 +549,19 @@ final class ChatViewTests: XCTestCase {
             preconditionFailure("AGENT_PROFILE did not decode")
         }
         return profile
+    }
+
+    @MainActor
+    func testApprovalShowsArgumentsInlineWithoutRepeatingTheCommand() {
+        let write: [String: JSONValue] = ["path": .string("hi.md"), "content": .string("hello")]
+        XCTAssertEqual(
+            HostedInteractionCard.argumentLines(write, hidingCommand: false),
+            "content: hello\npath: hi.md"
+        )
+
+        let command: [String: JSONValue] = ["command": .string("ls -la"), "cwd": .string("/tmp")]
+        XCTAssertEqual(HostedInteractionCard.argumentLines(command, hidingCommand: true), "cwd: /tmp")
+        XCTAssertNil(HostedInteractionCard.argumentLines(["cmd": .string("ls")], hidingCommand: true))
     }
 
     @MainActor
