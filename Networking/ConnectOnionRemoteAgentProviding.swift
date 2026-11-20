@@ -49,9 +49,16 @@ nonisolated protocol ConnectOnionRemoteAgentProviding: AnyObject, Sendable {
         stationSessionID: String?, inviteCode: String?, handlesOnboarding: Bool,
         onEvent: @escaping ConnectOnionRemoteAgentClient.EventHandler
     ) async -> Bool
+    /// Cuts the saved session back to before your latest message, `prompt` (Retry and Edit).
+    func rewindLatestTurn(prompt: String) async -> Bool
 }
 
 extension ConnectOnionRemoteAgentProviding {
+    // Test transports that keep no session have nothing to rewind.
+    func rewindLatestTurn(prompt: String) async -> Bool {
+        false
+    }
+
     func holdWorkRoomConnection(
         stationSessionID: String?, inviteCode: String?, handlesOnboarding: Bool,
         onEvent: @escaping ConnectOnionRemoteAgentClient.EventHandler
