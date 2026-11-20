@@ -363,4 +363,6 @@ nonisolated enum ConnectOnionTransportEvent: Sendable {
     /// The hosted agent reached a cancellation boundary and stopped the run.
     case interrupted
     case error(String)
+    /// The host refused the protocol version (-32010). Show the Incompatible screen, do not retry.
+    case incompatible(OIPHandshake.Incompatibility)
 }
