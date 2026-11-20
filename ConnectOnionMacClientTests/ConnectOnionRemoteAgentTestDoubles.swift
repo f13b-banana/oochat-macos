@@ -36,8 +36,12 @@ actor RemoteProtocolRecorder {
             events.append("onboarding")
         case .onboardingSucceeded(let value):
             events.append("onboarding_success:\(value)")
-        case .modeChanged(let value):
-            events.append("mode:\(value.rawValue)")
+        case .modeChanged(let value, let turnsLeft):
+            events.append("mode:\(value.rawValue)" + (turnsLeft.map { ":\($0)" } ?? ""))
+        case .sessionModes(let available, let current, _):
+            events.append(
+                "modes:\(available.map(\.rawValue).joined(separator: ",")):\(current?.rawValue ?? "none")"
+            )
         case .planReviewRequired:
             events.append("plan_review")
         case .ulwCheckpointRequired:
