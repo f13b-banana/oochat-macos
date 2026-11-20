@@ -39,6 +39,8 @@ struct AgentBalanceNotice: View {
                         .font(.system(size: 11, weight: .semibold))
                         .underline()
                         .foregroundStyle(OOColor.failureText)
+                        .frame(minHeight: 28)
+                        .contentShape(Rectangle())
                 }
             }
             .frame(maxWidth: .infinity)
