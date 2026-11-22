@@ -27,13 +27,16 @@ enum ChatViewPresentation {
         messages.last { $0.role == .user }?.id
     }
 
+    /// The active run shows while it's still empty, so the waiting row fills the gap before its first step.
     static func executionRuns(
         for message: ChatMessage,
-        from runs: [ExecutionRun]
+        from runs: [ExecutionRun],
+        activeRunID: UUID? = nil
     ) -> [ExecutionRun] {
         guard message.role == .user else { return [] }
         return runs.filter { run in
-            run.userMessageId == message.id && run.hasUserVisibleTrace
+            run.userMessageId == message.id
+                && (run.hasUserVisibleTrace || (run.id == activeRunID && run.status == .running))
         }
     }
 

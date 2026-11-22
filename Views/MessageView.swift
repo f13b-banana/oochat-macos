@@ -61,7 +61,7 @@ struct MessageView: View {
                             messageEditor
                         } else {
                             Text(message.content)
-                                .font(AppTypography.mono(size: fontSize))
+                                .font(.system(size: fontSize))
                                 .lineSpacing(3)
                                 .textSelection(.enabled)
                         }
@@ -238,7 +238,7 @@ struct MessageView: View {
             axis: .vertical
         )
         .textFieldStyle(.plain)
-        .font(AppTypography.mono(size: fontSize))
+        .font(.system(size: fontSize))
         .lineSpacing(3)
         .lineLimit(1...12)
         .focused($isEditorFocused)

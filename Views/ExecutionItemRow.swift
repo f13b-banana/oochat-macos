@@ -69,7 +69,7 @@ struct ExecutionItemRow: View {
         Group {
             if let content, !content.isEmpty {
                 Text(content)
-                    .font(AppTypography.mono(size: messageFontSize))
+                    .font(.system(size: messageFontSize))
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
             }
@@ -155,8 +155,7 @@ struct ExecutionItemRow: View {
                     Spacer(minLength: 16)
 
                     Text(statusLabel(toolCall))
-                        .font(AppTypography.mono(size: AppFontSize.footnote, weight: .medium))
-                        .tracking(0.5)
+                        .font(.system(size: AppFontSize.footnote, weight: .medium))
                         .foregroundStyle(OOColor.inkSecondary)
                         .fixedSize()
                 }
@@ -182,7 +181,7 @@ struct ExecutionItemRow: View {
 
     private func statusLabel(_ toolCall: ToolCallExecutionItem) -> String {
         if rowState(toolCall) == .awaitingApproval {
-            return ToolRowState.awaitingApproval.label.uppercased()
+            return ToolRowState.awaitingApproval.label
         }
         return toolCall.statusLabel(timing: toolCall.timingMS.flatMap(visibleDuration))
     }
@@ -389,10 +388,6 @@ struct ExecutionItemRow: View {
                     .lineLimit(2)
                     .truncationMode(.middle)
                 }
-                Spacer(minLength: 8)
-                Text("\(approval.risk.displayName) risk")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Color.secondary)
             }
         }
     }

@@ -7,11 +7,16 @@ struct ExecutionFlowView: View {
     let conversationWidth: CGFloat
     let workRooms: WorkRoomStore
     let onOpenWorkRoom: (String) -> Void
+    let agentName: String
+    /// The request in flight. Only it waits: a run saved mid-reply stays "running" in history.
+    let isActive: Bool
+    /// Nil when the agent can't be stopped right now, for example once Stop was already asked for.
+    let onStop: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if run.isDirectAnswerTrace && run.status == .running {
-                DirectAnswerProgressRow(startedAt: run.startedAt)
+            if isActive && run.isWaitingForFirstStep {
+                WaitingForAgentRow(startedAt: run.startedAt, agentName: agentName, onStop: onStop)
             } else {
                 ForEach(traceEntries) { entry in
                     switch entry {
@@ -78,36 +83,43 @@ struct ExecutionFlowView: View {
     }
 }
 
-/// Shows elapsed progress while a direct answer has no detailed trace items.
+/// Shown while the agent works on a reply with no trace yet: how long you've waited, and Stop after a while.
+private struct WaitingForAgentRow: View {
+    /// Stop only appears after this long, so a quick reply doesn't flash a button.
+    static let stopDelay = 10
 
-private struct DirectAnswerProgressRow: View {
     let startedAt: Date
+    let agentName: String
+    let onStop: (() -> Void)?
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let seconds = max(0, Int(context.date.timeIntervalSince(startedAt)))
             HStack(spacing: 9) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: AppFontSize.footnote, weight: .medium))
-                    .foregroundStyle(.secondary.opacity(0.85))
+                // macOS draws ProgressView's spinner itself and ignores tint, so the symbol carries the accent.
+                Image(systemName: "progress.indicator")
+                    .font(.system(size: AppFontSize.body))
+                    .foregroundStyle(OOColor.primary)
+                    .symbolEffect(.variableColor.iterative)
+                    .accessibilityHidden(true)
 
-                Text("\(phase(for: seconds))… (\(seconds)s)")
-                    .font(AppTypography.mono(size: AppFontSize.body, weight: .medium))
-                    .foregroundStyle(.secondary.opacity(0.85))
+                Text("Waiting for \(agentName) · \(seconds) s")
+                    .font(.system(size: AppFontSize.body))
+                    .foregroundStyle(OOColor.inkSecondary)
                     .contentTransition(.numericText())
+
+                if seconds >= Self.stopDelay, let onStop {
+                    Button("Stop", action: onStop)
+                        .buttonStyle(.plain)
+                        .font(.system(size: AppFontSize.body))
+                        .foregroundStyle(OOColor.inkSecondary)
+                        .underline()
+                        .frame(minHeight: 28)
+                        .contentShape(Rectangle())
+                        .help("Stop \(agentName)")
+                }
             }
             .frame(maxWidth: 920, alignment: .leading)
-        }
-    }
-
-    private func phase(for seconds: Int) -> String {
-        switch seconds {
-        case ..<3:
-            return "Thinking"
-        case ..<7:
-            return "Pondering"
-        default:
-            return "Synthesizing"
         }
     }
 }

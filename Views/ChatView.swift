@@ -22,9 +22,7 @@ struct ChatView: View {
     @State private var isKeyboardNavigatingSkills = false
     /// Whether you're at (or near) the bottom. Scrolled up, new messages don't pull you down.
     @State private var isAtBottom = true
-    /// About 1.5 windows above the newest message; only then does Jump to latest show.
-    @State private var isFarFromLatest = false
-    /// Something new arrived while you were scrolled up; shown as a dot on Jump to latest.
+    /// Something new arrived while you were scrolled up; shown as a dot on Latest.
     @State private var hasUnseenLatest = false
 
     private let minChatFontSize: Double = 12
@@ -441,7 +439,8 @@ struct ChatView: View {
     private func executionRuns(for message: ChatMessage) -> [ExecutionRun] {
         ChatViewPresentation.executionRuns(
             for: message,
-            from: viewModel.executionRuns
+            from: viewModel.executionRuns,
+            activeRunID: viewModel.activeExecutionRunID
         )
     }
 
@@ -473,7 +472,7 @@ struct ChatView: View {
             ScrollViewReader { proxy in
                 ZStack {
                     ScrollView {
-                        VStack(spacing: 16) {
+                        LazyVStack(spacing: 16) {
                             Color.clear
                                 .frame(height: 1)
                                 .id("topOfChat")
@@ -508,7 +507,10 @@ struct ChatView: View {
                                         messageFontSize: chatFontSize,
                                         conversationWidth: conversationWidth,
                                         workRooms: viewModel.workRooms,
-                                        onOpenWorkRoom: { viewModel.openWorkRoomID = $0 }
+                                        onOpenWorkRoom: { viewModel.openWorkRoomID = $0 },
+                                        agentName: viewModel.configuration.name,
+                                        isActive: run.id == viewModel.activeExecutionRunID,
+                                        onStop: stopAgentAction
                                     )
                                         .id(run.id)
                                 }
@@ -520,7 +522,10 @@ struct ChatView: View {
                                     messageFontSize: chatFontSize,
                                     conversationWidth: conversationWidth,
                                     workRooms: viewModel.workRooms,
-                                    onOpenWorkRoom: { viewModel.openWorkRoomID = $0 }
+                                    onOpenWorkRoom: { viewModel.openWorkRoomID = $0 },
+                                    agentName: viewModel.configuration.name,
+                                    isActive: run.id == viewModel.activeExecutionRunID,
+                                    onStop: stopAgentAction
                                 )
                                     .id(run.id)
                             }
@@ -561,15 +566,20 @@ struct ChatView: View {
                     .scrollContentBackground(.hidden)
                     .onScrollGeometryChange(for: ChatScrollPosition.self) { geometry in
                         ChatScrollPosition(geometry)
-                    } action: { _, position in
+                    } action: { old, position in
+                        // Content that grew under you while you were following doesn't count as scrolling
+                        // away, so the data handlers below still follow it. This can run before they do.
+                        // Nothing scrolls here: a row you expand near the bottom stays where it is.
+                        if position.grewWhileFollowing(from: old) {
+                            return
+                        }
                         isAtBottom = position.isAtBottom
-                        isFarFromLatest = position.isFarFromLatest
                         if position.isAtBottom {
                             hasUnseenLatest = false
                         }
                     }
                     .overlay(alignment: .bottom) {
-                        JumpToLatestButton(isShown: isFarFromLatest, hasUnseenLatest: hasUnseenLatest) {
+                        JumpToLatestButton(isShown: !isAtBottom, hasUnseenLatest: hasUnseenLatest) {
                             withAnimation {
                                 proxy.scrollTo("bottomOfChat", anchor: .bottom)
                             }
@@ -581,18 +591,16 @@ struct ChatView: View {
                     .onChange(of: historySelectionRevision) {
                         scrollToLastUserMessage(using: proxy)
                     }
-                    .onChange(of: viewModel.messages.count) {
+                    .onChange(of: viewModel.messages) {
                         // Scrolled up, nothing pulls you down, not even your own message. Only the
-                        // agent's reply lights the dot on Jump to latest.
-                        guard isAtBottom else {
-                            if viewModel.messages.last?.role == .agent {
-                                hasUnseenLatest = true
-                            }
-                            return
-                        }
-                        withAnimation {
-                            proxy.scrollTo("bottomOfChat", anchor: .bottom)
-                        }
+                        // agent's reply lights the dot on Latest.
+                        followNewContent(using: proxy, isFromAgent: viewModel.messages.last?.role == .agent)
+                    }
+                    .onChange(of: viewModel.executionRuns) {
+                        // New steps, and results filling in existing ones.
+                        // Fires on every streamed step, so it keeps up without animating: an
+                        // animation per update looks jittery during a long reply.
+                        followNewContent(using: proxy, isFromAgent: true, animated: false)
                     }
                     .onChange(of: viewModel.pendingInteraction) { _, interaction in
                         if interaction != nil, pendingApproval == nil {
@@ -703,7 +711,7 @@ struct ChatView: View {
                     )
                     .textFieldStyle(.plain)
                     .focused($isInputFocused)
-                    .font(AppTypography.mono(size: chatFontSize))
+                    .font(.system(size: chatFontSize))
                     .lineLimit(1...5)
                     .disabled(viewModel.pendingInteraction != nil)
                     .onSubmit {
@@ -871,19 +879,6 @@ struct ChatView: View {
         }
     }
 
-    private func scrollToLastUserMessage(using proxy: ScrollViewProxy) {
-        Task { @MainActor in
-            await Task.yield()
-            if let messageID = ChatViewPresentation.lastUserMessageID(
-                in: viewModel.messages
-            ) {
-                proxy.scrollTo(messageID, anchor: .top)
-            } else {
-                proxy.scrollTo("bottomOfChat", anchor: .bottom)
-            }
-        }
-    }
-
     private var sendButtonBackground: Color {
         if !canPerformPrimaryInputAction {
             return Color.secondary.opacity(0.4)
@@ -913,6 +908,12 @@ struct ChatView: View {
         return viewModel.canInterruptAgent
             ? "Stop agent"
             : "Send message"
+    }
+
+    /// The composer's Stop, offered to the waiting row while it can still do something.
+    private var stopAgentAction: (() -> Void)? {
+        guard viewModel.canInterruptAgent, !viewModel.isInterruptRequested else { return nil }
+        return { viewModel.interruptAgent() }
     }
 
     private func performPrimaryInputAction() {
@@ -1003,6 +1004,39 @@ struct ChatView: View {
     }
 }
 
+/// Where the transcript scrolls when content arrives. Kept outside the struct so ChatView's
+/// body stays under SwiftLint's type length limit.
+extension ChatView {
+    private func followNewContent(using proxy: ScrollViewProxy, isFromAgent: Bool, animated: Bool = true) {
+        guard isAtBottom else {
+            if isFromAgent {
+                hasUnseenLatest = true
+            }
+            return
+        }
+        guard animated else {
+            proxy.scrollTo("bottomOfChat", anchor: .bottom)
+            return
+        }
+        withAnimation {
+            proxy.scrollTo("bottomOfChat", anchor: .bottom)
+        }
+    }
+
+    private func scrollToLastUserMessage(using proxy: ScrollViewProxy) {
+        Task { @MainActor in
+            await Task.yield()
+            if let messageID = ChatViewPresentation.lastUserMessageID(
+                in: viewModel.messages
+            ) {
+                proxy.scrollTo(messageID, anchor: .top)
+            } else {
+                proxy.scrollTo("bottomOfChat", anchor: .bottom)
+            }
+        }
+    }
+}
+
 enum SkillPaletteNavigation {
     static func movedIndex(
         currentIndex: Int,
@@ -1051,31 +1085,29 @@ enum ControlCenterPaneWidth {
 
 /// Where the chat is scrolled, read from the scroll view itself.
 struct ChatScrollPosition: Equatable {
-    /// Within this of the bottom, new messages keep you at the bottom.
+    /// Within this of the bottom, new content keeps you at the bottom. Further up, Latest shows.
     static let followThreshold: CGFloat = 80
-    /// Jump to latest shows once you're this many windows up, as on iOS.
-    static let jumpToLatestScreens: CGFloat = 1.5
 
     let isAtBottom: Bool
-    let isFarFromLatest: Bool
+    let contentHeight: CGFloat
 
     init(_ geometry: ScrollGeometry) {
-        self.init(
-            contentHeight: geometry.contentSize.height,
-            visibleBottom: geometry.visibleRect.maxY,
-            viewportHeight: geometry.containerSize.height
-        )
+        self.init(contentHeight: geometry.contentSize.height, visibleBottom: geometry.visibleRect.maxY)
     }
 
     /// The same, from plain numbers, so it can be tested without a scroll view.
-    init(contentHeight: CGFloat, visibleBottom: CGFloat, viewportHeight: CGFloat) {
-        let distance = contentHeight - visibleBottom
-        isAtBottom = distance <= Self.followThreshold
-        isFarFromLatest = distance > viewportHeight * Self.jumpToLatestScreens
+    init(contentHeight: CGFloat, visibleBottom: CGFloat) {
+        self.contentHeight = contentHeight
+        isAtBottom = contentHeight - visibleBottom <= Self.followThreshold
+    }
+
+    /// New content was added below while you were at the bottom, rather than you scrolling away.
+    func grewWhileFollowing(from old: ChatScrollPosition) -> Bool {
+        old.isAtBottom && contentHeight > old.contentHeight
     }
 }
 
-/// Shown while you're well up the chat; brings you back to the newest message (also ⌘↓).
+/// Shown while you're scrolled up; brings you back to the newest message (also ⌘↓).
 private struct JumpToLatestButton: View {
     let isShown: Bool
     let hasUnseenLatest: Bool
@@ -1086,25 +1118,26 @@ private struct JumpToLatestButton: View {
         ZStack {
             if isShown {
                 Button(action: action) {
-                    Image(systemName: "arrow.down")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(OOColor.ink)
-                        .frame(width: 32, height: 32)
-                        .background(OOColor.paper, in: Circle())
-                        .overlay(Circle().stroke(OOColor.hairline, lineWidth: 1))
-                        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-                        .overlay(alignment: .topTrailing) {
-                            if hasUnseenLatest {
-                                Circle()
-                                    .fill(OOColor.primary)
-                                    .frame(width: 8, height: 8)
-                            }
+                    HStack(spacing: 6) {
+                        if hasUnseenLatest {
+                            Circle()
+                                .fill(OOColor.primary)
+                                .frame(width: 6, height: 6)
                         }
-                        .contentShape(Circle())
+                        Label("Latest", systemImage: "arrow.down")
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(OOColor.ink)
+                    .padding(.horizontal, 12)
+                    .frame(height: 28)
+                    .background(OOColor.paper, in: Capsule())
+                    .overlay(Capsule().stroke(OOColor.hairline, lineWidth: 1))
+                    .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .help("Jump to latest (⌘↓)")
-                .accessibilityLabel(hasUnseenLatest ? "Jump to latest, new messages" : "Jump to latest")
+                .accessibilityLabel(hasUnseenLatest ? "Jump to latest, new content" : "Jump to latest")
                 .padding(.bottom, 12)
                 .transition(reduceMotion ? .opacity : .scale(scale: 0.8).combined(with: .opacity))
             }

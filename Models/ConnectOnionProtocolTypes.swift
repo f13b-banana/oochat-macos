@@ -37,26 +37,9 @@ nonisolated struct ConnectOnionApprovalRequest: Identifiable, Hashable, Sendable
     let batchRemaining: [JSONValue]
 }
 
-/// Keyword heuristics that rank a pending tool call and pick out its target and command.
+/// Picks out a pending tool call's target and command.
 /// The one-sentence summary lives in the Kit (`OOApprovalDisclosure.summary`).
 extension ConnectOnionApprovalRequest {
-    var riskLevel: ApprovalRiskLevel {
-        let normalized = tool.lowercased()
-        let highRiskTerms = [
-            "delete", "remove", "unlink", "shell", "command", "execute",
-            "send", "reply", "upload", "close"
-        ]
-        if highRiskTerms.contains(where: normalized.contains) {
-            return .high
-        }
-
-        let mediumRiskTerms = [
-            "write", "edit", "update", "patch", "create", "move", "rename",
-            "click", "type", "select", "save"
-        ]
-        return mediumRiskTerms.contains(where: normalized.contains) ? .medium : .low
-    }
-
     var targetSummary: String? {
         guard case .object(let values) = arguments else { return nil }
         let keys = [

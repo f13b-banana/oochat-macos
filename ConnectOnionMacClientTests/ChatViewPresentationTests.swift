@@ -391,7 +391,6 @@ extension ChatViewTests {
                     id: "approved",
                     tool: "write_file",
                     target: "/workspace/new.txt",
-                    risk: .medium,
                     decision: .approvedForSession
                 )
             ),
@@ -400,7 +399,6 @@ extension ChatViewTests {
                     id: "rejected",
                     tool: "shell_command",
                     target: nil,
-                    risk: .high,
                     decision: .rejectedAndStopped
                 )
             ),

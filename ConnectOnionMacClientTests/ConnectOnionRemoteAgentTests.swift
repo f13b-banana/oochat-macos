@@ -153,9 +153,6 @@ final class ConnectOnionRemoteAgentTests: XCTestCase {
             )
         }
 
-        XCTAssertEqual(request("delete_file").riskLevel, .high)
-        XCTAssertEqual(request("write_file").riskLevel, .medium)
-        XCTAssertEqual(request("read_file").riskLevel, .low)
         XCTAssertNil(
             ConnectOnionApprovalRequest(
                 id: "non-object",

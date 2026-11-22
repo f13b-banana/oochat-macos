@@ -408,13 +408,12 @@ struct BalanceView: View {
                 Button {
                     let recoveryPhrase = viewModel.recoveryWords.joined(separator: " ")
                     guard !recoveryPhrase.isEmpty else { return }
-                    NSPasteboard.general.clearContents()
-                    if NSPasteboard.general.setString(recoveryPhrase, forType: .string) {
+                    if SecretPasteboard.copy(recoveryPhrase) {
                         showCopyFeedback(for: .recoveryPhrase)
                     }
                 } label: {
                     if copiedTarget == .recoveryPhrase {
-                        Label("Copied", systemImage: "checkmark.circle.fill")
+                        Label(SecretPasteboard.copiedMessage, systemImage: "checkmark.circle.fill")
                             .font(.system(size: AppFontSize.body, weight: .semibold))
                             .foregroundStyle(AppPalette.success)
                             .frame(maxWidth: .infinity)
@@ -454,6 +453,7 @@ struct BalanceView: View {
         isSensitive: Bool = false
     ) -> some View {
         let isCopied = copiedTarget == copyTarget
+        let copiedMessage = isSensitive ? SecretPasteboard.copiedMessage : "Copied"
 
         return VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
@@ -497,15 +497,22 @@ struct BalanceView: View {
 
                 Button {
                     guard let copyValue, !copyValue.isEmpty else { return }
-                    NSPasteboard.general.clearContents()
-                    if NSPasteboard.general.setString(copyValue, forType: .string) {
+                    let copied: Bool
+                    if isSensitive {
+                        copied = SecretPasteboard.copy(copyValue)
+                    } else {
+                        NSPasteboard.general.clearContents()
+                        copied = NSPasteboard.general.setString(copyValue, forType: .string)
+                    }
+                    if copied {
                         showCopyFeedback(for: copyTarget)
                     }
                 } label: {
                     if isCopied {
-                        Label("Copied", systemImage: "checkmark.circle.fill")
+                        Label(copiedMessage, systemImage: "checkmark.circle.fill")
                             .font(.system(size: AppFontSize.footnote, weight: .semibold))
                             .foregroundStyle(AppPalette.success)
+                            .fixedSize()
                             .frame(height: 28)
                     } else {
                         Image(systemName: "doc.on.clipboard")
@@ -520,7 +527,7 @@ struct BalanceView: View {
                 .opacity((copyValue?.isEmpty ?? true) ? 0.35 : 1)
                 .animation(.easeInOut(duration: 0.16), value: isCopied)
                 .accessibilityLabel(isCopied ? "\(title) copied" : "Copy \(title)")
-                .help(isCopied ? "Copied" : "Copy \(title)")
+                .help(isCopied ? copiedMessage : "Copy \(title)")
             }
             .padding(.horizontal, 16)
             .frame(minHeight: 46)
@@ -662,5 +669,35 @@ struct DockerConfigurationView: View {
         }
         .padding(18)
         .cardStyle(cornerRadius: 12)
+    }
+}
+
+/// Copies a secret so clipboard managers skip it, then clears it after a delay.
+enum SecretPasteboard {
+    /// The nspasteboard.org marker that clipboard managers and history tools skip.
+    static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+    static let copiedMessage = "Copied · clears in 60 s"
+
+    @discardableResult
+    static func copy(
+        _ secret: String,
+        to pasteboard: NSPasteboard = .general,
+        clearAfter delay: Duration = .seconds(60)
+    ) -> Bool {
+        pasteboard.clearContents()
+        guard pasteboard.setString(secret, forType: .string) else { return false }
+        pasteboard.setData(Data(), forType: concealedType)
+        let changeCount = pasteboard.changeCount
+        Task {
+            try? await Task.sleep(for: delay)
+            clearIfUnchanged(pasteboard, since: changeCount)
+        }
+        return true
+    }
+
+    /// Clears the pasteboard only if nothing else was copied since the secret.
+    static func clearIfUnchanged(_ pasteboard: NSPasteboard, since changeCount: Int) {
+        guard pasteboard.changeCount == changeCount else { return }
+        pasteboard.clearContents()
     }
 }
