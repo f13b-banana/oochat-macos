@@ -196,6 +196,37 @@ actor StubRemoteAgentClient: ConnectOnionRemoteAgentProviding {
         calls.append("disconnect")
     }
 
+    /// Events a viewer socket would deliver; empty means the socket ends at once.
+    var observedEvents: [ConnectOnionTransportEvent] = []
+
+    /// Keeps the viewer socket open after its events, as a turn still streaming does.
+    var holdsObservedTurnOpen = false
+
+    func setObservedEvents(_ events: [ConnectOnionTransportEvent], holdOpen: Bool = false) {
+        observedEvents = events
+        holdsObservedTurnOpen = holdOpen
+    }
+
+    /// Runs once the viewer socket is up, before its events (a local send can start by then).
+    var onObserveStart: (@MainActor @Sendable () -> Void)?
+
+    func setOnObserveStart(_ hook: (@MainActor @Sendable () -> Void)?) {
+        onObserveStart = hook
+    }
+
+    func observe(
+        onUpdate _: @escaping ConnectOnionRemoteAgentClient.UpdateHandler,
+        onEvent: @escaping ConnectOnionRemoteAgentClient.EventHandler
+    ) async -> ViewerEnding {
+        calls.append("observe")
+        let events = observedEvents
+        observedEvents = []
+        if let onObserveStart { await onObserveStart() }
+        for event in events { await onEvent(event) }
+        if holdsObservedTurnOpen { try? await Task.sleep(nanoseconds: 3_000_000_000) }
+        return events.isEmpty ? .closed : .turnFinished
+    }
+
     var execReply: [String: JSONValue] = ["status": .string("success"), "result": .string("stub output")]
 
     func runExec(

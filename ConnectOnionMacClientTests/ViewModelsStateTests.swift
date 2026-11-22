@@ -1,4 +1,6 @@
 import AppKit
+import ConnectOnionKit
+import CryptoKit
 import Foundation
 import XCTest
 @testable import ConnectOnionMacClient
@@ -113,6 +115,31 @@ extension ViewModelsTests {
         let persistedJSON = try XCTUnwrap(String(data: persisted, encoding: .utf8))
         XCTAssertFalse(persistedJSON.contains("byApi"))
         XCTAssertFalse(persistedJSON.contains("legacy-secret"))
+    }
+
+    /// A chat opened twice must not leave two view models listening: each appended every mirrored turn.
+    @MainActor
+    func testReopenedChatReusesOneViewModelAndADroppedOneDies() async {
+        final class NoUsage: UsageRecording { func record(_ record: LLMUsageRecord) {} }
+        let appViewModel = makeViewModel()
+        let configuration = makeHostedConfiguration()
+        let session = ChatSession(agentConfigId: configuration.id, title: "Chat")
+        let usage = NoUsage()
+        let first = appViewModel.chatViewModel(for: session, configuration: configuration, usageRecorder: usage)
+        let second = appViewModel.chatViewModel(for: session, configuration: configuration, usageRecorder: usage)
+        XCTAssertTrue(first === second)
+
+        weak var dropped: ChatViewModel?
+        do {
+            let viewModel = ChatViewModel(
+                session: session,
+                configuration: configuration,
+                service: ConnectOnionService(conversationID: session.id),
+                appViewModel: appViewModel
+            )
+            dropped = viewModel
+        }
+        XCTAssertNil(dropped)
     }
 
     @MainActor
@@ -666,67 +693,59 @@ extension ViewModelsTests {
         return storage
     }
 
-    private func message(
-        _ role: MessageRole,
-        _ content: String,
-        in sessionID: UUID
-    ) -> ChatMessage {
-        ChatMessage(sessionId: sessionID, role: role, content: content)
-    }
-
-    // A: merging a hosted snapshot must not drop a second message the client
-    // sent so fast the running turn's snapshot predates it.
+    // A Device Link replaced the key: every chat made so far is stamped with the Address it was made
+    // under, reads as from a previous identity, loses its resume bookmark, and keeps its messages.
     @MainActor
-    func testHostedMergePreservesATrailingLocalOnlyMessage() {
-        let id = UUID()
-        let projected = [message(.user, "first", in: id), message(.agent, "reply", in: id)]
-        let local = projected + [message(.user, "second", in: id)]
-
-        let merged = preservingLocalMetadata(from: local, in: projected)
-
-        XCTAssertEqual(
-            merged.map(\.content),
-            ["first", "reply", "second"],
-            "A trailing local message the snapshot lacks must survive the merge."
-        )
-    }
-
-    // A: a non-trailing local message the server dropped must not be resurrected.
-    @MainActor
-    func testHostedMergeDoesNotResurrectAnOlderRemovedMessage() {
-        let id = UUID()
-        let local = [
-            message(.user, "removed", in: id),
-            message(.user, "first", in: id),
-            message(.agent, "reply", in: id)
+    func testReplacingTheIdentityStampsEveryChatAndDropsItsResumeBookmark() throws {
+        let storage = makeIsolatedDefaults()
+        let keyStore = InMemoryPrivateKeyStore()
+        let previousAddress = try OIPSigner(keyStore: keyStore).address()
+        let olderAddress = "0x" + String(repeating: "cd", count: 32)
+        let configuration = makeHostedConfiguration()
+        let unstamped = ChatSession(agentConfigId: configuration.id, title: "Mine")
+        let stamped = ChatSession(agentConfigId: configuration.id, identityAddress: olderAddress, title: "Older")
+        let appViewModel = AppViewModel(storage: storage, historyKeyStore: keyStore)
+        appViewModel.configurations = [configuration]
+        appViewModel.sessions = [unstamped, stamped]
+        appViewModel.messages = [
+            ChatMessage(sessionId: unstamped.id, role: .user, content: "kept"),
+            ChatMessage(sessionId: unstamped.id, role: .user, content: "in flight", status: .sending),
+            ChatMessage(sessionId: stamped.id, role: .user, content: "older")
         ]
-        let projected = [message(.user, "first", in: id), message(.agent, "reply", in: id)]
+        for session in [unstamped, stamped] {
+            storage.set(Data("{}".utf8), forKey: ConnectOnionRemoteSessionStore.key(for: session.id))
+        }
+        XCTAssertFalse(appViewModel.isFromPreviousIdentity(unstamped))
 
-        let merged = preservingLocalMetadata(from: local, in: projected)
+        try keyStore.replacePrivateKey(with: Curve25519.Signing.PrivateKey().rawRepresentation)
+        appViewModel.adoptReplacedIdentity(previousAddress: previousAddress)
 
-        XCTAssertEqual(merged.map(\.content), ["first", "reply"])
+        XCTAssertEqual(appViewModel.sessions.map(\.identityAddress), [previousAddress, olderAddress])
+        XCTAssertTrue(appViewModel.sessions.allSatisfy { appViewModel.isFromPreviousIdentity($0) })
+        for session in [unstamped, stamped] {
+            XCTAssertNil(storage.data(forKey: ConnectOnionRemoteSessionStore.key(for: session.id)))
+        }
+        XCTAssertEqual(appViewModel.findMessages(for: unstamped.id).map(\.content), ["kept", "in flight"])
+        XCTAssertEqual(appViewModel.findMessages(for: unstamped.id).map(\.status), [.sent, .error])
+
+        appViewModel.createNewSession(for: configuration)
+        let newChat = try XCTUnwrap(appViewModel.sessions.last)
+        XCTAssertFalse(appViewModel.isFromPreviousIdentity(newChat), "a chat made after the link is current")
+        // Only chats with a message are saved; an empty one is a draft.
+        appViewModel.addMessage(ChatMessage(sessionId: newChat.id, role: .user, content: "new"))
+        let reloaded = AppViewModel(storage: storage, historyKeyStore: keyStore)
+        XCTAssertEqual(reloaded.sessions.map(\.identityAddress), [previousAddress, olderAddress, nil])
+        XCTAssertEqual(reloaded.sessions.map { reloaded.isFromPreviousIdentity($0) }, [true, true, false])
     }
 
-    // C: the overwrite guard treats a trailing local-only user message as
-    // "client is ahead", but still reconciles a server-reworded assistant reply.
+    // Chats saved before stamps existed have no stamp, and read as made under the current Address.
     @MainActor
-    func testTrailingLocalOnlyUserMessageGuard() {
-        let id = UUID()
-        let projected = [message(.user, "first", in: id), message(.agent, "reply", in: id)]
-        let ahead = projected + [message(.user, "second", in: id)]
+    func testAChatSavedWithoutAStampIsCurrent() throws {
+        let json = #"{"id":"\#(UUID().uuidString)","agentConfigId":"\#(UUID().uuidString)","title":"Old","#
+            + #""createdAt":0,"updatedAt":0}"#
+        let session = try JSONDecoder().decode(ChatSession.self, from: Data(json.utf8))
 
-        XCTAssertTrue(
-            AppViewModel.hasLocalOnlyTrailingUserMessage(local: ahead, projected: projected),
-            "A trailing user message the snapshot lacks means the client is ahead."
-        )
-        XCTAssertFalse(
-            AppViewModel.hasLocalOnlyTrailingUserMessage(local: ahead, projected: ahead),
-            "Once the snapshot includes the message the guard releases."
-        )
-        let agentTail = projected + [message(.agent, "reworded", in: id)]
-        XCTAssertFalse(
-            AppViewModel.hasLocalOnlyTrailingUserMessage(local: agentTail, projected: projected),
-            "A trailing assistant reply must still reconcile, not block the merge."
-        )
+        XCTAssertNil(session.identityAddress)
+        XCTAssertFalse(AppViewModel(storage: makeIsolatedDefaults()).isFromPreviousIdentity(session))
     }
 }

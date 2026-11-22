@@ -60,6 +60,10 @@ actor RemoteProtocolRecorder {
             events.append("dashboard_too_large:\(bytes)")
         case .agentProfile:
             events.append("agent_profile")
+        case .mirroredUserMessage(let value):
+            events.append("user_message:\(value)")
+        case .catchUp(let items, let isRunning):
+            events.append("catch_up:\(items.count):\(isRunning)")
         case .workRoomFrame:
             events.append("work_room_frame")
         case .workRoomSnapshot, .workRoomTransport, .workRoomConnectionDropped, .stationRefusedChat:

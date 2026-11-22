@@ -18,6 +18,8 @@ final class ConnectOnionService: ObservableObject {
     private let conversationID: UUID?
     private let initialRemoteSessionID: String?
     private let remoteAgentFactory: RemoteAgentFactory
+    /// The viewer gate: only a device that shares its Identity has another device's turns to watch.
+    private let isLinked: () -> Bool
     private var remoteAgentClient: (any ConnectOnionRemoteAgentProviding)?
     private var currentConfiguration: GeneralAgentConfiguration?
 
@@ -43,6 +45,9 @@ final class ConnectOnionService: ObservableObject {
     /// True while a send or recovery is in flight; messages arriving meanwhile
     /// are fed into the running request as runtime input.
     @Published var isAgentRequestActive = false
+    /// The active turn was typed on another device; this one may only watch, stop or approve.
+    @Published private(set) var isMirroredTurn = false
+    private var isObserving = false
     /// Changes whenever the hosted agent client is replaced or dropped, so a held Work Room connection
     /// follows the client it was opened for.
     @Published private(set) var connectionGeneration = 0
@@ -52,6 +57,7 @@ final class ConnectOnionService: ObservableObject {
     /// the client is closing the request as a fallback.
     @Published private(set) var isInterruptEscalating = false
     private var interruptEscalationTask: Task<Void, Never>?
+    private var linkEvents: Set<AnyCancellable> = []
 
     /// Session words come from the CO package so both apps say the same thing
     static let notConnected = SessionStatusLabel.text(
@@ -73,10 +79,13 @@ final class ConnectOnionService: ObservableObject {
         conversationID: UUID? = nil,
         initialRemoteSessionID: String? = nil,
         usageRecorder: (any UsageRecording)? = nil,
+        isLinked: @escaping () -> Bool = { ConnectOnionIdentityStore.shared.isLinked },
+        linkNotifications: NotificationCenter = .default,
         remoteAgentFactory: RemoteAgentFactory? = nil
     ) {
         self.conversationID = conversationID
         self.initialRemoteSessionID = initialRemoteSessionID
+        self.isLinked = isLinked
         self.remoteAgentFactory = remoteAgentFactory ?? {
             ConnectOnionRemoteAgentClient(
                 configuredTarget: $0,
@@ -85,6 +94,38 @@ final class ConnectOnionService: ObservableObject {
                 usageRecorder: usageRecorder
             )
         }
+        linkNotifications.publisher(for: Self.identityDidChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.disconnect() }
+            }
+            .store(in: &linkEvents)
+        linkNotifications.publisher(for: Self.didLinkNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.startViewer() }
+            }
+            .store(in: &linkEvents)
+    }
+
+    private static let identityDidChangeNotification = Notification.Name("ConnectOnionService.identityDidChange")
+    private static let didLinkNotification = Notification.Name("ConnectOnionService.didLink")
+
+    /// Call after a Device Link replaced the private key. Every existing chat now belongs to the old
+    /// Address and is read-only, so each live service closes its connection; new chats connect as the new one.
+    static func identityDidChange(in notifications: NotificationCenter = .default) {
+        notifications.post(name: identityDidChangeNotification, object: nil)
+    }
+
+    /// Call after this device gave its Identity away. Its Address is unchanged, so connections stay;
+    /// each open chat starts the viewer the linked flag now allows.
+    static func didLink(in notifications: NotificationCenter = .default) {
+        notifications.post(name: didLinkNotification, object: nil)
+    }
+
+    private func startViewer() {
+        guard isConnected, remoteAgentClient != nil else { return }
+        Task { await observe() }
     }
 
     /// Routes the configuration to the address flow and fails fast on retired
@@ -173,10 +214,10 @@ final class ConnectOnionService: ObservableObject {
                     self.isAgentRequestActive = true
                     self.isInterruptRequested = false
                     await client.recoverIfNeeded(
-                        onUpdate: { [weak self] update in
+                        onUpdate: { @MainActor [weak self] update in
                             self?.apply(update)
                         },
-                        onEvent: { [weak self] event in
+                        onEvent: { @MainActor [weak self] event in
                             self?.emit(event)
                         }
                     )
@@ -187,17 +228,21 @@ final class ConnectOnionService: ObservableObject {
                     // This is best-effort: failure must not mark the agent offline.
                     do {
                         try await client.loadAgentProfile(
-                            onEvent: { [weak self] event in
+                            onEvent: { @MainActor [weak self] event in
                                 guard let self,
                                       self.remoteAgentClient === client else {
                                     return
                                 }
-                                self.emit(event)
+                                // Carries the catch-up on open, so it applies as the viewer's would.
+                                self.handleViewerEvent(event)
                             }
                         )
                     } catch {
                         // Keep using the public agent information if this fails.
                     }
+                }
+                if self.remoteAgentClient === client {
+                    await self.observe()
                 }
             } catch {
                 guard let self, self.remoteAgentClient === client else { return }
@@ -278,6 +323,9 @@ final class ConnectOnionService: ObservableObject {
             return
         }
 
+        // Another device owns this turn: never inject input into it.
+        guard !isMirroredTurn else { return }
+
         do {
             guard let remoteAgentClient else {
                 throw ConnectOnionServiceError.notConnected
@@ -298,14 +346,15 @@ final class ConnectOnionService: ObservableObject {
                 isInterruptEscalating = false
                 interruptEscalationTask?.cancel()
                 interruptEscalationTask = nil
+                Task { [weak self] in await self?.observe() }
             }
             let response = try await remoteAgentClient.send(
                 prompt: message,
                 files: files,
-                onUpdate: { [weak self] update in
+                onUpdate: { @MainActor [weak self] update in
                     self?.apply(update)
                 },
-                onEvent: { [weak self] event in
+                onEvent: { @MainActor [weak self] event in
                     guard let self, !self.isInterruptRequested else { return }
                     self.emit(event)
                 }
@@ -339,6 +388,53 @@ final class ConnectOnionService: ObservableObject {
                 incomingEvents.send(.error(error.localizedDescription))
             }
         }
+    }
+
+    /// Watches this chat's host session so a turn typed on another device shows here: while it
+    /// streams the request is active (Replying, Send off, Stop on), and the next one is awaited.
+    /// Only on a linked device: an unlinked one has no other device to watch, so it holds no viewer.
+    func observe() async {
+        guard !isObserving, isLinked() else { return }
+        isObserving = true
+        defer { isObserving = false }
+        while let client = remoteAgentClient, !isAgentRequestActive {
+            let ending = await client.observe(
+                onUpdate: { [weak self] in self?.apply($0) },
+                onEvent: { [weak self] in self?.handleViewerEvent($0) }
+            )
+            // A local send closes the viewer socket and owns the flags from then on.
+            applyViewer(.viewerEnded)
+            guard ending == .turnFinished else { return }
+            // A host that ends a viewer straight away (a replayed result, an instant interrupt) would
+            // otherwise spin reconnects; a turn started meanwhile still arrives as the next catch-up.
+            guard (try? await Task.sleep(nanoseconds: 1_000_000_000)) != nil else { return }
+        }
+    }
+
+    private func handleViewerEvent(_ event: ConnectOnionTransportEvent) {
+        switch event {
+        case .mirroredUserMessage:
+            applyViewer(.userMessage)
+            // The state refused it: a local send owns the transcript.
+            if isAgentRequestActive, !isMirroredTurn { return }
+        case .catchUp(_, let isRunning):
+            applyViewer(.catchUp(isRunning: isRunning))
+            if isAgentRequestActive, !isMirroredTurn { return }
+        case .output, .interrupted, .error:
+            applyViewer(.finished)
+            isInterruptRequested = false
+        default:
+            break
+        }
+        emit(event)
+    }
+
+    /// Runs one viewer event through the Kit's turn state, so macOS and iOS lock the same way.
+    private func applyViewer(_ event: ViewerTurnState.Event) {
+        var state = ViewerTurnState(isActive: isAgentRequestActive, isMirrored: isMirroredTurn)
+        state.apply(event)
+        isAgentRequestActive = state.isActive
+        isMirroredTurn = state.isMirrored
     }
 
     /// Cuts the agent's saved session back to before your latest message, so the next send
@@ -467,10 +563,10 @@ final class ConnectOnionService: ObservableObject {
                 isInterruptRequested = false
             }
             await remoteAgentClient.recoverIfNeeded(
-                onUpdate: { [weak self] update in
+                onUpdate: { @MainActor [weak self] update in
                     self?.apply(update)
                 },
-                onEvent: { [weak self] event in
+                onEvent: { @MainActor [weak self] event in
                     self?.emit(event)
                 }
             )

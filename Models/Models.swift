@@ -19,6 +19,9 @@ nonisolated struct GeneralAgentConfiguration: Identifiable, Codable, Hashable {
     var addressConfiguration: AgentAddressConfiguration?
     var avatarTextColorHex: String?
     var avatarBackgroundColorHex: String?
+    /// The 0x Address a Direct URL agent reported when last reached. nil until then, and for a 0x agent;
+    /// older data decodes as nil.
+    var resolvedAddress: String?
     /// Set once the host's profile says this agent is a Claude Station, so its row can show it before the next connect.
     var isClaudeStation = false
 
@@ -27,6 +30,12 @@ nonisolated struct GeneralAgentConfiguration: Identifiable, Codable, Hashable {
     var agentIdentity: String? {
         guard let raw = addressConfiguration?.agentAddress else { return nil }
         return ConnectOnionAgentTarget.normalized(raw)
+    }
+
+    /// The lower-cased 0x Address this agent answers as, where the app knows it. Agents match by it:
+    /// a Direct URL agent and a 0x agent with the same Address are one agent.
+    var agentAddress: String? {
+        addressConfiguration.flatMap { ConnectOnionAddress.normalized($0.agentAddress) } ?? resolvedAddress
     }
 }
 
@@ -40,6 +49,7 @@ extension GeneralAgentConfiguration {
         addressConfiguration = try container.decodeIfPresent(AgentAddressConfiguration.self, forKey: .addressConfiguration)
         avatarTextColorHex = try container.decodeIfPresent(String.self, forKey: .avatarTextColorHex)
         avatarBackgroundColorHex = try container.decodeIfPresent(String.self, forKey: .avatarBackgroundColorHex)
+        resolvedAddress = try container.decodeIfPresent(String.self, forKey: .resolvedAddress)
         isClaudeStation = try container.decodeIfPresent(Bool.self, forKey: .isClaudeStation) ?? false
     }
 }
@@ -62,9 +72,29 @@ nonisolated struct ChatSession: Identifiable, Codable, Hashable {
     /// Stable ConnectOnion host session identifier shared by native and web
     /// clients. Older locally-only conversations decode this as `nil`.
     var remoteSessionID: String?
+    /// The Address this chat was made under, stamped when a Device Link replaces the Identity.
+    /// nil means the current Address; older data decodes as nil.
+    var identityAddress: String?
     var title: String
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
+    /// The host's `updated` value from the last History Restore that returned this session. nil for a chat
+    /// the host has never returned; older data decodes as nil.
+    var hostUpdatedAt: Date?
+    /// Set when the chat was deleted: the row is a Tombstone, emptied and hidden, and this is the `updated`
+    /// value History Restore must see exceeded before it brings the session back. Older data decodes as nil.
+    var tombstoneUpdatedAt: Date?
+
+    /// A deleted chat kept only so History Restore can skip its session.
+    var isTombstone: Bool { tombstoneUpdatedAt != nil }
+
+    static let defaultTitle = "New chat"
+    /// Chats saved before the copy change say "New Chat".
+    static let legacyDefaultTitles: Set<String> = ["New Chat"]
+
+    var isUntitled: Bool {
+        title == Self.defaultTitle || Self.legacyDefaultTitles.contains(title)
+    }
 }
 
 /// Who produced a `ChatMessage`.

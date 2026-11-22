@@ -1,5 +1,4 @@
 import ConnectOnionKit
-import CryptoKit
 import Foundation
 
 /// Drives one hosted-agent conversation over the signed WebSocket protocol:
@@ -34,6 +33,7 @@ actor ConnectOnionRemoteAgentClient {
     private var pendingAskUserRequestID: String?
     private var pendingApprovalRequestID: String?
     private var isSending = false
+    private var isObserving = false
     private var liveLLMModelsByID: [String: String] = [:]
     private var eventLedger = EventLedger()
     /// chat_items from the last CONNECTED. The host sends them when its copy of the
@@ -97,6 +97,9 @@ actor ConnectOnionRemoteAgentClient {
         guard try await waitForProfileHandshake(over: task, onEvent: onEvent) else {
             return
         }
+        // Catch-up on open, linked or not. A running turn is left to the viewer, the only one
+        // that can follow it to its end, so this never locks the chat.
+        await emitCatchUp(isRunning: false, onEvent: onEvent)
 
         // The host sends AGENT_PROFILE and then the Control Center which O Chat's page gets on open.
         // They are read in whatever order they arrive and the wait ends once both are in.
@@ -242,6 +245,59 @@ actor ConnectOnionRemoteAgentClient {
         )
     }
 
+    /// Reports the user and agent turns in CONNECTED's `chat_items`. Skipped when there are none
+    /// and no turn is running.
+    private func emitCatchUp(isRunning: Bool, onEvent: EventHandler) async {
+        let items = MirroredTurn.items(fromChatItems: connectedChatItems?.map { JSONValue(any: $0) })
+        if !items.isEmpty || isRunning {
+            await onEvent(.catchUp(items, isRunning: isRunning))
+        }
+    }
+
+    /// Joins this chat's host session as a viewer: connects with its session_id, reports the
+    /// turns the host already has, and shows turns typed on another device until one finishes.
+    /// Returns when that turn's reply has been emitted or the socket ends. A local `send` closes
+    /// this socket, which ends the call quietly.
+    @discardableResult
+    func observe(
+        onUpdate: @escaping UpdateHandler,
+        onEvent: @escaping EventHandler
+    ) async -> ViewerEnding {
+        guard !isSending, !isObserving else { return .closed }
+        isObserving = true
+        defer { isObserving = false }
+        do {
+            let request = ConnectOnionConnectionRequest(
+                prompt: nil,
+                files: [],
+                inputID: UUID().uuidString,
+                identity: try identityStore.loadOrCreateIdentity(),
+                endpoint: try await probe()
+            )
+            let (task, established) = try await establishConnection(
+                request,
+                onUpdate: onUpdate,
+                onEvent: onEvent
+            )
+            canSendControlMessages = true
+            await emitCatchUp(isRunning: established.isRunning, onEvent: onEvent)
+            let result = try await receiveConnectionResult(
+                over: task,
+                endpoint: request.endpoint,
+                onUpdate: onUpdate,
+                onEvent: onEvent
+            )
+            await onEvent(.output(result))
+            return .turnFinished
+        } catch ConnectOnionRemoteError.interrupted {
+            await onEvent(.interrupted)
+            return .turnFinished
+        } catch {
+            // ponytail: a dropped viewer socket is not retried; the next chat open or send re-observes.
+            return .closed
+        }
+    }
+
     /// Feeds an extra user message into the running execution, queueing it
     /// until the initial INPUT has actually gone out on a live socket.
     func sendRuntimeInput(
@@ -276,20 +332,26 @@ actor ConnectOnionRemoteAgentClient {
     }
 
     func interrupt() async throws {
-        guard isSending else {
+        guard isSending || isObserving else {
             throw ConnectOnionRemoteError.requestInProgress
         }
 
         interruptRequested = true
-        sessionState.wasInterrupted = true
-        sessionStore.save(sessionState)
+        // Another device's turn: its input id is not ours, and nothing local is left to recover.
+        let turn = ViewerTurnState(isActive: true, isMirrored: !isSending)
+        if !turn.isMirrored {
+            sessionState.wasInterrupted = true
+            sessionStore.save(sessionState)
+        }
         if canSendControlMessages, let task = webSocketTask {
             try await sendFrame(
-                try frames().interrupt(inputID: sessionState.activeInputID),
+                try frames().interrupt(inputID: turn.interruptInputID(local: sessionState.activeInputID)),
                 over: task
             )
         }
-        scheduleInterruptEscalation()
+        if !turn.isMirrored {
+            scheduleInterruptEscalation()
+        }
     }
 
     private func sendRuntimeInputNow(
@@ -812,6 +874,11 @@ extension ConnectOnionRemoteAgentClient {
 
         case "PING":
             try await sendFrame(OIPClientFrames.pong(), over: task)
+
+        case "user_message":
+            if let content = MirroredTurn.prompt(fromUserMessage: event.mapValues { JSONValue(any: $0) }) {
+                await onEvent(.mirroredUserMessage(content))
+            }
 
         case "DASHBOARD_SNAPSHOT":
             await emitDashboardSnapshot(event, currentSessionID: sessionState.sessionID, onEvent: onEvent)
@@ -1410,235 +1477,6 @@ extension ConnectOnionRemoteAgentClient {
         for record in records {
             await usageRecorder.record(record)
         }
-    }
-
-    nonisolated static func makeUsageSummary(
-        from payload: [String: Any]
-    ) -> ChatUsageSummary? {
-        guard let session = payload["session"] as? [String: Any],
-              let trace = session["trace"] as? [[String: Any]] else {
-            return nil
-        }
-
-        var latestTokenCount = 0
-        var totalCost = 0.0
-        var latestContextPercent: Double?
-
-        for entry in trace where entry["type"] as? String == "llm_result" {
-            if let usage = entry["usage"] as? [String: Any] {
-                let inputTokens = (usage["input_tokens"] as? NSNumber)?.intValue ?? 0
-                let outputTokens = (usage["output_tokens"] as? NSNumber)?.intValue ?? 0
-                latestTokenCount = inputTokens + outputTokens
-                totalCost += (usage["cost"] as? NSNumber)?.doubleValue ?? 0
-            }
-
-            if let contextPercent = (entry["context_percent"] as? NSNumber)?.doubleValue {
-                latestContextPercent = contextPercent
-            }
-        }
-
-        guard latestTokenCount > 0, let latestContextPercent else {
-            return nil
-        }
-
-        return ChatUsageSummary(
-            tokenCount: latestTokenCount,
-            totalCost: totalCost,
-            contextPercent: latestContextPercent
-        )
-    }
-
-    nonisolated static func makeUsageRecords(
-        from payload: [String: Any],
-        agentAddress: String,
-        remoteSessionID: String,
-        fallbackModel: String?,
-        now: Date = Date()
-    ) -> [LLMUsageRecord] {
-        guard let session = payload["session"] as? [String: Any],
-              let trace = session["trace"] as? [[String: Any]] else {
-            return []
-        }
-
-        var callModels: [String: String] = [:]
-        var latestCallModel: String?
-        var records: [LLMUsageRecord] = []
-
-        for (index, entry) in trace.enumerated() {
-            let type = entry["type"] as? String
-            if type == "llm_call" {
-                if let model = normalizedModel(entry["model"] as? String) {
-                    latestCallModel = model
-                    if let callID = usageCallID(from: entry) {
-                        callModels[callID] = model
-                    }
-                }
-                continue
-            }
-
-            guard type == "llm_result" else { continue }
-            let callID = usageCallID(from: entry)
-            let model = normalizedModel(entry["model"] as? String)
-                ?? callID.flatMap { callModels[$0] }
-                ?? latestCallModel
-                ?? normalizedModel(fallbackModel)
-                ?? "Unknown model"
-            let stableCallID = callID ?? fallbackTraceCallID(
-                entry: entry,
-                index: index
-            )
-            records.append(
-                makeUsageRecord(
-                    from: entry,
-                    context: ConnectOnionUsageCallContext(
-                        agentAddress: agentAddress,
-                        remoteSessionID: remoteSessionID,
-                        callID: stableCallID,
-                        model: model,
-                        now: now
-                    )
-                )
-            )
-        }
-
-        return records
-    }
-
-    nonisolated static func makeLiveUsageRecord(
-        from event: [String: Any],
-        agentAddress: String,
-        remoteSessionID: String,
-        fallbackModel: String?,
-        now: Date = Date()
-    ) -> LLMUsageRecord? {
-        guard event["type"] as? String == "llm_result",
-              let callID = usageCallID(from: event) else {
-            return nil
-        }
-        return makeUsageRecord(
-            from: event,
-            context: ConnectOnionUsageCallContext(
-                agentAddress: agentAddress,
-                remoteSessionID: remoteSessionID,
-                callID: callID,
-                model: normalizedModel(event["model"] as? String)
-                    ?? normalizedModel(fallbackModel)
-                    ?? "Unknown model",
-                now: now
-            )
-        )
-    }
-
-    nonisolated private static func makeUsageRecord(
-        from entry: [String: Any],
-        context: ConnectOnionUsageCallContext
-    ) -> LLMUsageRecord {
-        let usage = entry["usage"] as? [String: Any]
-        let inputTokens = max(
-            0,
-            intValue(usage?["input_tokens"])
-                ?? intValue(usage?["prompt_tokens"])
-                ?? 0
-        )
-        let outputTokens = max(
-            0,
-            intValue(usage?["output_tokens"])
-                ?? intValue(usage?["completion_tokens"])
-                ?? 0
-        )
-        return LLMUsageRecord(
-            id: stableUsageID(
-                agentAddress: context.agentAddress,
-                remoteSessionID: context.remoteSessionID,
-                callID: context.callID
-            ),
-            timestamp: usageTimestamp(from: entry) ?? context.now,
-            model: context.model,
-            inputTokens: inputTokens,
-            outputTokens: outputTokens,
-            agentAddress: context.agentAddress
-        )
-    }
-
-    nonisolated static func stableUsageID(
-        agentAddress: String,
-        remoteSessionID: String,
-        callID: String
-    ) -> String {
-        let material = [
-            agentAddress.lowercased(),
-            remoteSessionID,
-            callID
-        ].joined(separator: "\u{1F}")
-        return SHA256.hash(data: Data(material.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
-    }
-
-    nonisolated private static func usageCallID(
-        from entry: [String: Any]
-    ) -> String? {
-        (entry["call_id"] as? String)
-            ?? (entry["llm_call_id"] as? String)
-            ?? (entry["id"] as? String)
-    }
-
-    nonisolated private static func fallbackTraceCallID(
-        entry: [String: Any],
-        index: Int
-    ) -> String {
-        let serialized: String
-        if JSONSerialization.isValidJSONObject(entry),
-           let data = try? JSONSerialization.data(
-               withJSONObject: entry,
-               options: [.sortedKeys]
-           ) {
-            serialized = data.base64EncodedString()
-        } else {
-            serialized = String(describing: entry)
-        }
-        let digest = SHA256.hash(data: Data(serialized.utf8))
-            .prefix(8)
-            .map { String(format: "%02x", $0) }
-            .joined()
-        return "trace-\(index)-\(digest)"
-    }
-
-    nonisolated private static func normalizedModel(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    nonisolated private static func usageTimestamp(
-        from entry: [String: Any]
-    ) -> Date? {
-        for key in ["timestamp", "created_at", "created", "time"] {
-            guard let value = entry[key] else { continue }
-            if let number = doubleValue(value) {
-                let seconds = number > 10_000_000_000 ? number / 1_000 : number
-                return Date(timeIntervalSince1970: seconds)
-            }
-            if let string = value as? String {
-                if let number = Double(string) {
-                    let seconds = number > 10_000_000_000 ? number / 1_000 : number
-                    return Date(timeIntervalSince1970: seconds)
-                }
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [
-                    .withInternetDateTime,
-                    .withFractionalSeconds
-                ]
-                if let date = formatter.date(from: string) {
-                    return date
-                }
-                formatter.formatOptions = [.withInternetDateTime]
-                if let date = formatter.date(from: string) {
-                    return date
-                }
-            }
-        }
-        return nil
     }
 
     private func makeApprovalRequest(
