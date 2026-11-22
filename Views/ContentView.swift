@@ -11,7 +11,7 @@ struct ContentView: View {
     @AppStorage("isDarkMode") private var isDarkMode = false
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
     @AppStorage("isSidebarVisible") private var isSidebarVisible = true
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @AppStorage("agentPaneWidth") private var agentPaneWidth = AgentPaneWidth.initial
     /// A link from the home screen adds the giver's agents before its sheet is done, so home stays up until then.
     @State private var isHomeLinking = false
 
@@ -35,14 +35,16 @@ struct ContentView: View {
     }
 
     var body: some View {
-        // The system split view: the sidebar resizes (220–400 pt), hides with the toolbar
-        // button or ⌃⌘S, and remembers whether it was shown.
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(appViewModel: appViewModel)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 400)
-                // Our own toggle below, so hiding is instant rather than the system slide.
-                .toolbar(removing: .sidebarToggle)
-        } detail: {
+        // Laid out as Discord is: the agent rail, the agent pane (resizable 220–360 pt, hidden with
+        // the toolbar button or ⌃⌘S), then the chat. Three neutral layers, darkest at the rail.
+        HStack(spacing: 0) {
+            AgentRail(appViewModel: appViewModel)
+            if isSidebarVisible && !appViewModel.configurations.isEmpty {
+                SidebarView(appViewModel: appViewModel)
+                    .frame(width: CGFloat(AgentPaneWidth.clamped(agentPaneWidth)))
+                AgentPaneResizeHandle(width: $agentPaneWidth)
+                    .zIndex(1)
+            }
             GeometryReader { detailGeometry in
                 ZStack {
                     AppBackground()
@@ -54,12 +56,15 @@ struct ContentView: View {
                 dockerRuntimeBanner
             }
         }
-        .navigationSplitViewStyle(.balanced)
-        .onAppear {
-            columnVisibility = isSidebarVisible ? .all : .detailOnly
-        }
-        .onChange(of: columnVisibility) { _, visibility in
-            isSidebarVisible = visibility != .detailOnly
+        .background {
+            // ⌘N starts a chat with the pane's agent whether or not the pane is showing.
+            Button("New Chat", action: startNewChat)
+                .keyboardShortcut("n", modifiers: .command)
+                .hidden()
+            // ⌘F shows the pane first if it's hidden, then opens its search.
+            Button("Search Chats", action: searchChats)
+                .keyboardShortcut("f", modifiers: .command)
+                .hidden()
         }
         .tint(AppPalette.primaryAction)
         .onChange(of: appearanceMode, initial: true) { _, mode in
@@ -88,15 +93,32 @@ struct ContentView: View {
         }
     }
 
-    /// The system's own sidebar toggle (so the window keeps its size), run with a zero-length
-    /// animation so it snaps instead of sliding: the slide reflowed the chat and the Control
-    /// Center pane every frame.
+    /// Shows or hides the agent pane at once; the rail stays, as Discord's server list does.
     private func toggleSidebar() {
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0
-            context.allowsImplicitAnimation = false
-            NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            isSidebarVisible.toggle()
         }
+    }
+
+    private func searchChats() {
+        if !isSidebarVisible {
+            toggleSidebar()
+        }
+        // Next turn, so a pane that was hidden is there to hear it.
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .agentPaneSearch, object: nil)
+        }
+    }
+
+    private func startNewChat() {
+        guard let agent = appViewModel.paneAgent else {
+            appViewModel.selection = .chooseAgent
+            return
+        }
+        appViewModel.focusedAgentID = agent.id
+        appViewModel.createNewSession(for: agent)
     }
 
     /// The open chat and its agent, for the toolbar's "agent / chat".
@@ -275,7 +297,8 @@ struct ContentView: View {
             }
 
         case .none:
-            ChooseAgentView(appViewModel: appViewModel)
+            // Home, the logo at the top of the rail: the start screen, to talk to any agent.
+            AgentConnectHomeView(appViewModel: appViewModel, isLinking: $isHomeLinking)
         }
     }
 
@@ -948,7 +971,7 @@ struct ChatBreadcrumb: View {
     }
 
     /// True when the click lands on the text being edited (the window's field editor).
-    private static func isInsideEditedField(_ event: NSEvent) -> Bool {
+    static func isInsideEditedField(_ event: NSEvent) -> Bool {
         guard let window = event.window,
               let frameView = window.contentView?.superview,
               let hit = frameView.hitTest(frameView.convert(event.locationInWindow, from: nil)) else {

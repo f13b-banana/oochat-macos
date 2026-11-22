@@ -29,6 +29,8 @@ class ChatViewModel: ObservableObject {
     /// The newest DASHBOARD_SNAPSHOT for this chat - adds the session checks.
     @Published var dashboard: OIPDashboard?
     @Published var isSubmittingInteraction = false
+    /// The Work Room shown in place of the chat; the agent pane can open one too.
+    @Published var openWorkRoomID: String?
     /// True from a Retry or Edit click until its send has started, so a second click can't rewind twice.
     @Published private(set) var isRedoing = false
     @Published private(set) var latestUsage: ChatUsageSummary?
