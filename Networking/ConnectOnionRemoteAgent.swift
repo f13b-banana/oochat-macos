@@ -521,6 +521,15 @@ actor ConnectOnionRemoteAgentClient {
         interruptDeadlineTask?.cancel()
         closeSocket()
     }
+
+    /// Cuts the saved session back to before your latest message, `prompt`, so the next send redoes it.
+    func rewindLatestTurn(prompt: String) -> Bool {
+        guard !isSending, sessionState.rewindLatestTurn(prompt: prompt) else {
+            return false
+        }
+        sessionStore.save(sessionState)
+        return true
+    }
 }
 
 /// Connection lifecycle: the retry loop, the handshake, and the event pump.

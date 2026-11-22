@@ -27,6 +27,8 @@ class ChatViewModel: ObservableObject {
     /// The newest DASHBOARD_SNAPSHOT for this chat - adds the session checks.
     @Published var dashboard: OIPDashboard?
     @Published var isSubmittingInteraction = false
+    /// True from a Retry or Edit click until its send has started, so a second click can't rewind twice.
+    @Published private(set) var isRedoing = false
     @Published private(set) var latestUsage: ChatUsageSummary?
     @Published private(set) var agentProfile: OIPAgentProfile?
     /// Set after an interrupt so every trailing event from that cancelled run
@@ -604,18 +606,23 @@ extension ChatViewModel {
         )
     }
 
-    func canRetryAgentMessage(_ agentMessage: ChatMessage) -> Bool {
-        guard agentMessage.role == .agent,
-              pendingInteraction == nil,
-              !service.isAgentRequestActive,
-              !voiceInputService.isRecording,
-              !voiceInputService.isTranscribing,
-              let sourceMessage = sourceUserMessage(for: agentMessage),
-              let request = retryRequest(for: sourceMessage),
-              attachmentValidationError(for: request.files) == nil else {
+    /// Only your latest sent message can be edited, and only while nothing is running.
+    func canEditMessage(_ message: ChatMessage) -> Bool {
+        guard message.role == .user, let index = latestRedoableMessageIndex() else {
             return false
         }
-        return true
+        return messages[index].id == message.id
+    }
+
+    /// Only the agent's latest reply, to your latest message, can be retried.
+    func canRetryAgentMessage(_ agentMessage: ChatMessage) -> Bool {
+        guard agentMessage.role == .agent,
+              let index = latestRedoableMessageIndex(),
+              let replyIndex = messages.lastIndex(where: { $0.role == .agent }),
+              replyIndex > index else {
+            return false
+        }
+        return messages[replyIndex].id == agentMessage.id
     }
 
     func canRetryFailedMessage(_ message: ChatMessage) -> Bool {
@@ -639,15 +646,21 @@ extension ChatViewModel {
         submitRequest(request, title: nil, clearsComposer: false)
     }
 
+    /// Has the agent answer your latest message again; its old answer is replaced in place.
     func retryAgentMessage(_ agentMessage: ChatMessage) {
-        guard canRetryAgentMessage(agentMessage),
-              let sourceMessage = sourceUserMessage(for: agentMessage),
-              let request = retryRequest(for: sourceMessage) else {
+        guard canRetryAgentMessage(agentMessage) else {
             return
         }
+        redoLatestTurn(editedText: nil)
+    }
 
-        attachmentError = nil
-        submitRequest(request, title: nil, clearsComposer: false)
+    /// Changes your latest message in place and has the agent answer it again.
+    func editLatestMessage(_ message: ChatMessage, to text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, canEditMessage(message) else {
+            return
+        }
+        redoLatestTurn(editedText: trimmed)
     }
 
     func submitAskUser(answer: String, displayAnswer: String? = nil) {
@@ -984,22 +997,76 @@ extension ChatViewModel {
         }
     }
 
-    private func sourceUserMessage(
-        for agentMessage: ChatMessage
-    ) -> ChatMessage? {
-        guard agentMessage.role == .agent else { return nil }
-        if let replyToMessageID = agentMessage.replyToMessageID,
-           let sourceMessage = messages.first(where: {
-               $0.id == replyToMessageID && $0.role == .user
-           }) {
-            return sourceMessage
-        }
-        guard let agentIndex = messages.firstIndex(where: {
-            $0.id == agentMessage.id
-        }) else {
+    /// Your latest message, when it was sent, nothing is running, and it can be rebuilt to send again.
+    private func latestRedoableMessageIndex() -> Int? {
+        guard !isRedoing,
+              pendingInteraction == nil,
+              !service.isAgentRequestActive,
+              !voiceInputService.isRecording,
+              !voiceInputService.isTranscribing,
+              let index = messages.lastIndex(where: { $0.role == .user }),
+              messages[index].status == .sent,
+              let request = retryRequest(for: messages[index]),
+              attachmentValidationError(for: request.files) == nil else {
             return nil
         }
-        return messages[..<agentIndex].last { $0.role == .user }
+        return index
+    }
+
+    /// Rewinds the agent's session to before your latest message, then sends it again in place.
+    private func redoLatestTurn(editedText: String?) {
+        guard let index = latestRedoableMessageIndex(),
+              let cached = retryRequest(for: messages[index]) else {
+            return
+        }
+        let messageID = messages[index].id
+        let request = editedText.map {
+            ChatRetryRequest(displayContent: $0, requestContent: $0, files: cached.files)
+        } ?? cached
+        attachmentError = nil
+        // Set before the Task: the send only marks a request active once it starts, so a second
+        // click in between would rewind again and lose the turn before this one.
+        isRedoing = true
+        Task {
+            defer { isRedoing = false }
+            if !service.isConnected {
+                service.connect(with: configuration)
+            }
+            // The prompt as the host has it, so the cut lands on that message and not on one
+            // Core added mid-turn.
+            guard await service.rewindLatestTurn(prompt: cached.requestContent) else {
+                appendSystemNotice("Couldn't redo that. Send it again as a new message instead.")
+                return
+            }
+            replaceLatestTurn(messageID: messageID, with: request)
+            await service.sendMessage(
+                request.requestContent,
+                files: request.files,
+                localMessageID: messageID,
+                using: configuration
+            )
+        }
+    }
+
+    /// Drops everything after your message, including its tool steps, and marks it as sending again.
+    private func replaceLatestTurn(messageID: UUID, with request: ChatRetryRequest) {
+        guard let index = messages.firstIndex(where: { $0.id == messageID }) else {
+            return
+        }
+        let dropped = messages[(index + 1)...]
+        let droppedIDs = Set(dropped.map(\.id))
+        // Their exported files go too, as when a chat is deleted.
+        appViewModel.generatedArtifactStore.removeArtifacts(dropped.flatMap { $0.artifacts ?? [] })
+        messages.removeSubrange((index + 1)...)
+        appViewModel.messages.removeAll { droppedIDs.contains($0.id) }
+        messages[index].content = request.displayContent
+        messages[index].status = .sending
+        appViewModel.upsertMessage(messages[index])
+        appViewModel.cacheRetryRequest(request, for: messageID)
+        setExecutionRuns(executionRuns.filter { $0.userMessageId != messageID })
+        prepareForNewRequest()
+        startExecutionRun(for: messageID)
+        appViewModel.updateSessionDate(session)
     }
 
     /// Only a newly submitted request may release the event fence left by an

@@ -365,9 +365,10 @@ extension ConnectOnionServiceTests {
         XCTAssertEqual(sentRequests[0].prompt, "Describe this image")
         XCTAssertEqual(sentRequests[0].files, [attachment])
         XCTAssertEqual(sentRequests[1].files, [attachment])
+        // Redone in place: still one message of yours, the same one.
         XCTAssertEqual(
-            viewModel.messages.filter { $0.role == .user }.map(\.content),
-            ["Describe this image", "Describe this image"]
+            viewModel.messages.filter { $0.role == .user }.map(\.id),
+            [firstUserMessage.id]
         )
     }
 
@@ -555,6 +556,153 @@ extension ConnectOnionServiceTests {
             from: savedData
         )
         XCTAssertEqual(savedMessages.last?.usage, usage)
+    }
+
+    // MARK: - Redo the latest turn in place
+
+    @MainActor
+    func testRetryRedoesTheLatestTurnInPlace() async throws {
+        let chat = try await makeChatWithOneTurn()
+        let yourMessage = try XCTUnwrap(chat.viewModel.messages.first { $0.role == .user })
+        let reply = try XCTUnwrap(chat.viewModel.messages.last { $0.role == .agent })
+
+        chat.viewModel.retryAgentMessage(reply)
+        await waitUntil {
+            await chat.remote.sentRequestSnapshot().count == 2
+                && !chat.service.isAgentRequestActive
+        }
+        // As in makeChatWithOneTurn: the stub's reply doesn't always reach the chat on its own.
+        if !chat.viewModel.messages.contains(where: { $0.role == .agent }) {
+            chat.viewModel.handleIncomingEvent(.output("Second response"))
+        }
+
+        let messages = chat.viewModel.messages
+        XCTAssertEqual(messages.filter { $0.role == .user }.map(\.id), [yourMessage.id])
+        XCTAssertEqual(messages.filter { $0.role == .agent }.count, 1)
+        XCTAssertFalse(messages.contains { $0.id == reply.id }, "the old reply is gone")
+        XCTAssertEqual(messages.first { $0.role == .user }?.status, .sent)
+    }
+
+    @MainActor
+    func testEditRedoesYourLatestMessageInPlace() async throws {
+        let chat = try await makeChatWithOneTurn()
+        let yourMessage = try XCTUnwrap(chat.viewModel.messages.first { $0.role == .user })
+        chat.viewModel.inputText = "Half-written draft"
+
+        chat.viewModel.editLatestMessage(yourMessage, to: "  Hello again ")
+        await waitUntil {
+            await chat.remote.sentRequestSnapshot().count == 2
+                && !chat.service.isAgentRequestActive
+        }
+
+        let sent = await chat.remote.sentRequestSnapshot()
+        XCTAssertEqual(sent.last?.prompt, "Hello again")
+        let yours = chat.viewModel.messages.filter { $0.role == .user }
+        XCTAssertEqual(yours.map(\.id), [yourMessage.id])
+        XCTAssertEqual(yours.map(\.content), ["Hello again"])
+        XCTAssertEqual(chat.viewModel.inputText, "Half-written draft", "your draft is left alone")
+    }
+
+    // Every send opens a new socket with the saved session, so it must be cut back first.
+    @MainActor
+    func testRedoRewindsTheSessionBeforeSending() async throws {
+        let chat = try await makeChatWithOneTurn()
+        let reply = try XCTUnwrap(chat.viewModel.messages.last { $0.role == .agent })
+
+        chat.viewModel.retryAgentMessage(reply)
+        await waitUntil {
+            await chat.remote.sentRequestSnapshot().count == 2
+        }
+
+        let calls = await chat.remote.callSnapshot()
+        // The prompt goes with it, so the cut lands on that message and not one Core added.
+        let rewind = try XCTUnwrap(calls.firstIndex(of: "rewindLatestTurn:Hello"))
+        let resend = try XCTUnwrap(calls.lastIndex(of: "send:Hello:0"))
+        XCTAssertLessThan(rewind, resend)
+    }
+
+    // A second click before the send has started must not rewind a second time.
+    @MainActor
+    func testADoubleClickedRetryRewindsOnce() async throws {
+        let chat = try await makeChatWithOneTurn()
+        let reply = try XCTUnwrap(chat.viewModel.messages.last { $0.role == .agent })
+
+        chat.viewModel.retryAgentMessage(reply)
+        XCTAssertFalse(chat.viewModel.canRetryAgentMessage(reply))
+        chat.viewModel.retryAgentMessage(reply)
+        await waitUntil {
+            await chat.remote.sentRequestSnapshot().count == 2
+        }
+
+        let rewinds = await chat.remote.callSnapshot().filter { $0.hasPrefix("rewindLatestTurn") }
+        XCTAssertEqual(rewinds.count, 1)
+    }
+
+    @MainActor
+    func testNothingChangesWhenTheSessionCannotBeRewound() async throws {
+        let chat = try await makeChatWithOneTurn(rewindSucceeds: false)
+        let before = chat.viewModel.messages
+        let reply = try XCTUnwrap(before.last { $0.role == .agent })
+
+        chat.viewModel.retryAgentMessage(reply)
+        await waitUntil {
+            chat.viewModel.messages.last?.role == .system
+        }
+
+        XCTAssertEqual(Array(chat.viewModel.messages.dropLast()), before)
+        let sentCount = await chat.remote.sentRequestSnapshot().count
+        XCTAssertEqual(sentCount, 1)
+    }
+
+    private struct RedoChat {
+        let viewModel: ChatViewModel
+        let remote: StubRemoteAgentClient
+        let service: ConnectOnionService
+    }
+
+    /// A chat where you sent "Hello" and the agent replied.
+    @MainActor
+    private func makeChatWithOneTurn(rewindSucceeds: Bool = true) async throws -> RedoChat {
+        let appViewModel = AppViewModel(storage: makeIsolatedDefaults())
+        let address = "0x" + String(repeating: "47", count: 32)
+        let endpoint = ConnectOnionResolvedEndpoint(
+            agentAddress: address,
+            webSocketURL: try XCTUnwrap(URL(string: "wss://agent.test/ws")),
+            httpBaseURL: try XCTUnwrap(URL(string: "https://agent.test")),
+            isDirect: true,
+            info: nil
+        )
+        let remote = await StubRemoteAgentClient(endpoint: endpoint, rewindSucceeds: rewindSucceeds)
+        let configuration = GeneralAgentConfiguration(
+            name: "Main Agent",
+            connectionType: .byAddress,
+            addressConfiguration: AgentAddressConfiguration(agentAddress: address)
+        )
+        let session = ChatSession(agentConfigId: configuration.id, title: "Redo")
+        let service = ConnectOnionService(
+            conversationID: session.id,
+            remoteAgentFactory: { _, _, _ in remote }
+        )
+        let viewModel = ChatViewModel(
+            session: session,
+            configuration: configuration,
+            service: service,
+            appViewModel: appViewModel
+        )
+        viewModel.connectIfNeeded()
+        await waitUntil {
+            service.isHostedAgentStatusLive
+        }
+        viewModel.inputText = "Hello"
+        viewModel.sendMessage()
+        await waitUntil {
+            await remote.sentRequestSnapshot().count == 1
+                && !service.isAgentRequestActive
+        }
+        if !viewModel.messages.contains(where: { $0.role == .agent }) {
+            viewModel.handleIncomingEvent(.output("First response"))
+        }
+        return RedoChat(viewModel: viewModel, remote: remote, service: service)
     }
 
     // MARK: - Tool row states

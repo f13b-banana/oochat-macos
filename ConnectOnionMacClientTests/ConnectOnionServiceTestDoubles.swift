@@ -42,15 +42,19 @@ actor StubRemoteAgentClient: ConnectOnionRemoteAgentProviding {
     let emitsApprovalOnSend: Bool
     /// Sent after the stub's own events on each send.
     let eventsOnSend: [ConnectOnionTransportEvent]
+    /// What `rewindLatestTurn` answers: false acts like a session with nothing to rewind.
+    let rewindSucceeds: Bool
 
     init(
         endpoint: ConnectOnionResolvedEndpoint,
         pendingExecution: Bool = false,
         failures: Set<StubRemoteOperation> = [],
         emitsApprovalOnSend: Bool = false,
-        eventsOnSend: [ConnectOnionTransportEvent] = []
+        eventsOnSend: [ConnectOnionTransportEvent] = [],
+        rewindSucceeds: Bool = true
     ) async {
         self.endpoint = endpoint
+        self.rewindSucceeds = rewindSucceeds
         self.pendingExecution = pendingExecution
         self.failures = failures
         self.emitsApprovalOnSend = emitsApprovalOnSend
@@ -61,6 +65,11 @@ actor StubRemoteAgentClient: ConnectOnionRemoteAgentProviding {
         calls.append("probe")
         try failIfNeeded(.probe)
         return endpoint
+    }
+
+    func rewindLatestTurn(prompt: String) async -> Bool {
+        calls.append("rewindLatestTurn:\(prompt)")
+        return rewindSucceeds
     }
 
     func hasPendingExecution() async -> Bool {
