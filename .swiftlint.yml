@@ -50,10 +50,11 @@ line_length:
 
 # Size thresholds sit just above what this codebase measures, not at SwiftLint's
 # defaults, so that raising one is a deliberate act rather than a silent one.
-# The file ceiling is ConnectOnionRemoteAgent.swift at 1479 counted lines: the
-# protocol client actor and the two extensions that reach its private stored
-# state have to share a file, and separating them would mean widening that
-# state. Every other source file is under 1100 lines and every test file under
+# The file ceiling is ConnectOnionRemoteAgent.swift at about 1690 counted lines:
+# the protocol client actor and the extensions that reach its private stored
+# state (the Work Room connection among them) have to share a file, and
+# separating them would mean widening that state. Its stateless facade protocol
+# and error type live in ConnectOnionRemoteAgentProviding.swift. Every other source file is under 1100 lines and every test file under
 # 750.
 file_length:
   warning: 1700

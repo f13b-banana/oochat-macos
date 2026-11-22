@@ -290,6 +290,25 @@ nonisolated enum ConnectOnionTransportEvent: Sendable {
     case dashboard(OIPDashboard)
     /// A decoded frame for the conversation's Work Room store (provider_invocation, provider_activity, provider_message).
     case workRoomFrame(OIPServerFrame)
+    /// The handshake's CONNECTED, which rebuilds the Work Rooms from the host's chat items.
+    case workRoomSnapshot(OIPConnected)
+    /// The turn socket is open: the frame builder and a signed send over it, for Work Room decisions.
+    /// `send` returns false when the frame could not be written.
+    case workRoomTransport(frames: OIPClientFrames, send: @Sendable ([String: JSONValue]) async -> Bool)
+    /// A Claude Station refused the turn's outer INPUT (`provider_station_only`). Not a chat failure.
+    case stationRefusedChat
+    /// The socket closed or failed; Work Rooms keep what they show.
+    case workRoomConnectionDropped
+}
+
+extension ConnectOnionTransportEvent {
+    /// Feeds the Work Room store rather than the transcript.
+    var isWorkRoomEvent: Bool {
+        switch self {
+        case .workRoomFrame, .workRoomSnapshot, .workRoomTransport, .workRoomConnectionDropped: true
+        default: false
+        }
+    }
 }
 
 extension ConnectOnionRemoteError {

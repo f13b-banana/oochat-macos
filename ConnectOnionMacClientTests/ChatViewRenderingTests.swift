@@ -93,6 +93,40 @@ extension ChatViewTests {
     }
 
     @MainActor
+    func testReconnectSnapshotBuildsWorkRoomCardWithoutLiveFrames() throws {
+        var run = ExecutionRun(sessionId: UUID(), userMessageId: nil)
+        run.items = [
+            .toolCall(ToolCallExecutionItem(id: "call-7", name: "run_codex", args: [:], status: .running))
+        ]
+        let viewModel = makeViewModel(
+            messages: [ChatMessage(sessionId: UUID(), role: .user, content: "Build it")],
+            executionRuns: [run]
+        )
+        let connected = Data(
+            """
+            {"type":"CONNECTED","status":"connected","server_newer":true,"chat_items":[
+              {"id":"codex:call-7","type":"provider_invocation","invocationId":"codex:call-7",
+               "parentToolCallId":"call-7","provider":"codex","status":"running","stateRevision":3,
+               "taskTitle":"Build and verify the requested C program"}]}
+            """.utf8
+        )
+        guard case .established(let snapshot) = try OIPHandshake.interpret(connected) else {
+            return XCTFail("CONNECTED should establish the connection")
+        }
+
+        viewModel.handleIncomingEvent(.workRoomSnapshot(snapshot))
+
+        let entries = ChatViewPresentation.traceEntries(
+            viewModel.executionRuns.flatMap(\.items),
+            workRooms: viewModel.workRooms
+        )
+        guard case .workRoom(let workRoom)? = entries.first else {
+            return XCTFail("the snapshot should rebuild the Work Room Card")
+        }
+        XCTAssertEqual(workRoom.title, "Build and verify the requested C program")
+    }
+
+    @MainActor
     func testFileMutationBuildsStructuredDiffPresentation() {
         let item = ToolCallExecutionItem(
             id: "write-1",

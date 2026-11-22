@@ -43,6 +43,9 @@ final class ConnectOnionService: ObservableObject {
     /// True while a send or recovery is in flight; messages arriving meanwhile
     /// are fed into the running request as runtime input.
     @Published var isAgentRequestActive = false
+    /// Changes whenever the hosted agent client is replaced or dropped, so a held Work Room connection
+    /// follows the client it was opened for.
+    @Published private(set) var connectionGeneration = 0
     /// Blocks duplicate stop requests until the current step finishes or fails.
     @Published var isInterruptRequested = false
     /// True when the hosted agent has not confirmed cancellation promptly and
@@ -57,6 +60,13 @@ final class ConnectOnionService: ObservableObject {
         hostStatus: nil
     )
     /// Single outbound stream of transport events (output, errors, approvals).
+    /// Set by the chat: whether the Work Room owns this `approval_needed` body.
+    var ownsProviderApproval: (([String: JSONValue]) -> Bool)?
+    /// Set by the chat: takes Work Room events (frames, snapshot, transport, drop) the moment they arrive, in
+    /// order, instead of through `incomingEvents`. The store is then current when the next `approval_needed` is
+    /// checked against it.
+    var onWorkRoomEvent: ((ConnectOnionTransportEvent) -> Void)?
+    private var isProviderApprovalOwned = false
     let incomingEvents = PassthroughSubject<ConnectOnionTransportEvent, Never>()
 
     init(
@@ -119,6 +129,7 @@ final class ConnectOnionService: ObservableObject {
             initialRemoteSessionID
         )
         remoteAgentClient = client
+        connectionGeneration += 1
         hostedAgentStatus = SessionStatusLabel.text(
             state:
                 .connecting(attempt: 0),
@@ -194,6 +205,27 @@ final class ConnectOnionService: ObservableObject {
                 self.hostedAgentStatusDetail = error.localizedDescription
                 self.isHostedAgentStatusLive = false
             }
+        }
+    }
+
+    /// Keeps a connection open for an open Work Room while no turn is running, so Provider Input can be
+    /// sent between turns. A connection that fails or drops is opened again, waiting 1 s and doubling up to
+    /// 30 s. Returns when a turn starts, the client is replaced, the user has to act (onboarding), or the
+    /// calling task is cancelled.
+    func holdWorkRoomConnection(
+        stationSessionID: String? = nil, inviteCode: String? = nil, handlesOnboarding: Bool = false
+    ) async {
+        var delay: Duration = .seconds(1)
+        while !Task.isCancelled, !isAgentRequestActive, let client = remoteAgentClient {
+            let shouldRetry = await client.holdWorkRoomConnection(
+                stationSessionID: stationSessionID, inviteCode: inviteCode, handlesOnboarding: handlesOnboarding
+            ) { [weak self] event in
+                guard let self, self.remoteAgentClient === client else { return }
+                self.emit(event)
+            }
+            guard shouldRetry, remoteAgentClient === client else { return }
+            try? await Task.sleep(for: delay)
+            delay = min(delay * 2, .seconds(30))
         }
     }
 
@@ -284,6 +316,9 @@ final class ConnectOnionService: ObservableObject {
             incomingEvents.send(.output(response))
 
             connectionError = nil
+        } catch ConnectOnionRemoteError.stationOnly {
+            connectionError = nil
+            incomingEvents.send(.stationRefusedChat)
         } catch ConnectOnionRemoteError.interrupted {
             hostedAgentStatus = "Connected"
             hostedAgentStatusDetail = "Stopped by user"
@@ -444,6 +479,18 @@ final class ConnectOnionService: ObservableObject {
     /// Forwards transport events to the UI, mirroring mode changes and, while in
     /// accept mode, answering approval requests without surfacing them.
     private func emit(_ event: ConnectOnionTransportEvent) {
+        // The Work Room answers a Provider approval; its hosted prompt (and accept mode's auto-answer) is skipped.
+        if case .workRoomFrame(.event(type: "approval_needed", _, let body)) = event {
+            isProviderApprovalOwned = ownsProviderApproval?(body) ?? false
+        }
+        if case .approvalRequired = event, isProviderApprovalOwned {
+            isProviderApprovalOwned = false
+            return
+        }
+        if event.isWorkRoomEvent, let onWorkRoomEvent {
+            onWorkRoomEvent(event)
+            return
+        }
         if case .modeChanged(let mode, let turnsLeft) = event {
             desiredExecutionMode = mode
             confirmedExecutionMode = mode
@@ -484,6 +531,9 @@ final class ConnectOnionService: ObservableObject {
     private func stopRemoteAgent() {
         let client = remoteAgentClient
         remoteAgentClient = nil
+        connectionGeneration += 1
+        // The old client's events are ignored from here on, so the store is told directly.
+        emit(.workRoomConnectionDropped)
         if let client {
             Task {
                 await client.disconnect()
