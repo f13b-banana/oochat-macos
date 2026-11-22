@@ -54,6 +54,8 @@ actor RemoteProtocolRecorder {
             events.append("error:\(value)")
         case .incompatible(let value):
             events.append("incompatible:\(value.neededVersion ?? "unknown")")
+        case .agentProfile:
+            events.append("agent_profile")
         }
     }
 
