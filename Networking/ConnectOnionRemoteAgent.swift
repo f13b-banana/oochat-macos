@@ -1317,7 +1317,8 @@ extension ConnectOnionRemoteAgentClient {
             "timestamp": timestamp,
             "payload": payload,
             "from": identity.address,
-            "signature": try identity.signature(for: payload)
+            "signature": try identity.signature(for: payload),
+            "protocol": OIP.descriptor.mapValues { $0.anyValue }
         ]
 
         if !endpoint.isDirect {
