@@ -204,8 +204,16 @@ extension ChatViewTests {
         )
     }
 
+    // Approvals saved before the risk label was removed still carry "risk"; they must still load.
+    func testSavedApprovalWithOldRiskFieldStillDecodes() throws {
+        let json = Data(#"{"id":"a","tool":"bash","risk":"low","decision":"approvedOnce"}"#.utf8)
+        let item = try JSONDecoder().decode(ApprovalExecutionItem.self, from: json)
+        XCTAssertEqual(item.tool, "bash")
+        XCTAssertEqual(item.decision, .approvedOnce)
+    }
+
     @MainActor
-    func testApprovalPresentationClassifiesRiskAndTarget() {
+    func testApprovalPresentationFindsTarget() {
         let request = ConnectOnionApprovalRequest(
             id: "delete-1",
             tool: "delete_file",
@@ -214,7 +222,6 @@ extension ChatViewTests {
             batchRemaining: []
         )
 
-        XCTAssertEqual(request.riskLevel, .high)
         XCTAssertEqual(request.targetSummary, "/workspace/secret.txt")
         XCTAssertEqual(request.kitSummary, "Delete secret.txt.")
     }
@@ -456,18 +463,55 @@ extension ChatViewTests {
         XCTAssertEqual(result.map(\.id), [visible.id])
     }
 
-    // Within 80 pt of the bottom new messages keep you there; 1.5 windows up, Jump to latest shows.
-    func testChatScrollPositionFollowsNearTheBottomAndOffersJumpWellUp() {
-        let atBottom = ChatScrollPosition(contentHeight: 2_000, visibleBottom: 1_950, viewportHeight: 600)
-        XCTAssertTrue(atBottom.isAtBottom)
-        XCTAssertFalse(atBottom.isFarFromLatest)
+    // The request in flight shows before its first step, so the waiting row has somewhere to be.
+    @MainActor
+    func testExecutionRunsShowTheEmptyActiveRunOnly() async {
+        let sessionID = UUID()
+        let message = ChatMessage(sessionId: sessionID, role: .user, content: "Explain")
+        let active = ExecutionRun(sessionId: sessionID, userMessageId: message.id)
+        let stale = ExecutionRun(sessionId: sessionID, userMessageId: message.id)
 
-        let justUp = ChatScrollPosition(contentHeight: 2_000, visibleBottom: 1_800, viewportHeight: 600)
-        XCTAssertFalse(justUp.isAtBottom)
-        XCTAssertFalse(justUp.isFarFromLatest, "200 pt up is less than 1.5 windows")
+        let result = ChatViewPresentation.executionRuns(
+            for: message,
+            from: [stale, active],
+            activeRunID: active.id
+        )
 
-        let wellUp = ChatScrollPosition(contentHeight: 3_000, visibleBottom: 1_000, viewportHeight: 600)
-        XCTAssertFalse(wellUp.isAtBottom)
-        XCTAssertTrue(wellUp.isFarFromLatest)
+        XCTAssertEqual(result.map(\.id), [active.id])
+    }
+
+    // The waiting row covers an empty run and an intent with no ack yet, and goes once the ack arrives.
+    func testRunIsWaitingUntilSomethingVisibleArrives() {
+        var run = ExecutionRun(sessionId: UUID(), userMessageId: UUID())
+        XCTAssertTrue(run.isWaitingForFirstStep)
+
+        run.items = [.intent(IntentExecutionItem(id: "intent", status: .analyzing, ack: nil))]
+        XCTAssertTrue(run.isWaitingForFirstStep)
+
+        run.items = [.intent(IntentExecutionItem(id: "intent", status: .understood, ack: "On it"))]
+        XCTAssertFalse(run.isWaitingForFirstStep)
+
+        run.items = []
+        run.status = .done
+        XCTAssertFalse(run.isWaitingForFirstStep)
+    }
+
+    // Within 80 pt of the bottom new content keeps you there; further up, Latest shows instead.
+    func testChatScrollPositionFollowsOnlyNearTheBottom() {
+        XCTAssertTrue(ChatScrollPosition(contentHeight: 2_000, visibleBottom: 1_950).isAtBottom)
+        XCTAssertTrue(ChatScrollPosition(contentHeight: 2_000, visibleBottom: 1_920).isAtBottom)
+        XCTAssertFalse(ChatScrollPosition(contentHeight: 2_000, visibleBottom: 1_800).isAtBottom)
+    }
+
+    // A new message below you while you're following keeps you following; scrolling up yourself doesn't.
+    func testChatScrollPositionKeepsFollowingWhenContentGrowsBelow() {
+        let following = ChatScrollPosition(contentHeight: 2_000, visibleBottom: 2_000)
+        let grown = ChatScrollPosition(contentHeight: 2_300, visibleBottom: 2_000)
+        XCTAssertFalse(grown.isAtBottom)
+        XCTAssertTrue(grown.grewWhileFollowing(from: following))
+
+        let scrolledUp = ChatScrollPosition(contentHeight: 2_000, visibleBottom: 1_600)
+        XCTAssertFalse(scrolledUp.grewWhileFollowing(from: following))
+        XCTAssertFalse(grown.grewWhileFollowing(from: scrolledUp))
     }
 }

@@ -180,6 +180,20 @@ nonisolated struct ExecutionRun: Identifiable, Codable, Hashable, Sendable {
         }
     }
 
+    /// Still running with nothing to show: no steps yet, an intent with no ack yet, or plain thinking steps.
+    var isWaitingForFirstStep: Bool {
+        status == .running && items.allSatisfy { item in
+            switch item {
+            case .intent(let intent):
+                return intent.ack?.isEmpty ?? true
+            case .thinking(let thinking):
+                return thinking.kind == nil
+            case .toolCall, .approval, .eval:
+                return false
+            }
+        }
+    }
+
     var hasUserVisibleTrace: Bool {
         isDirectAnswerTrace || items.contains { item in
             switch item {
@@ -305,15 +319,6 @@ nonisolated struct FileChangeSummary: Codable, Hashable, Sendable {
     var diff: String?
 }
 
-/// How dangerous the host considered a tool call needing approval.
-nonisolated enum ApprovalRiskLevel: String, Codable, Hashable, Sendable {
-    case low
-    case medium
-    case high
-
-    var displayName: String { rawValue.capitalized }
-}
-
 /// What the user decided about an approval request.
 nonisolated enum ApprovalRecordDecision: String, Codable, Hashable, Sendable {
     case approvedOnce
@@ -341,7 +346,6 @@ nonisolated struct ApprovalExecutionItem: Identifiable, Codable, Hashable, Senda
     let id: String
     var tool: String
     var target: String?
-    var risk: ApprovalRiskLevel
     var decision: ApprovalRecordDecision
 }
 
@@ -586,21 +590,20 @@ extension ToolCallExecutionItem {
         stringArgument(["command", "cmd", "script", "input"])
     }
 
-    /// Trailing status chip, e.g. "EXIT CODE 0 (0.4s)" for shell tools or
-    /// "DONE (0.4s)" otherwise. ConnectOnion emits no structured exit code; the
-    /// bash/shell tools instead append "Exit code: N" to the result on failure,
-    /// so success implies 0.
+    /// Trailing status, e.g. "Done (0.4s)", or "Exit code 2" for a failed shell tool.
+    /// ConnectOnion emits no structured exit code; the bash/shell tools instead append
+    /// "Exit code: N" to the result on failure, so success is 0 and isn't shown.
     func statusLabel(timing: String?) -> String {
         let base: String
         switch status {
         case .running:
-            base = "RUNNING"
+            base = "Running"
         case .error:
-            base = category == .shell ? "EXIT CODE \(shellExitCode ?? 1)" : "ERROR"
+            base = category == .shell ? "Exit code \(shellExitCode ?? 1)" : "Error"
         case .done:
-            base = category == .shell ? "EXIT CODE \(shellExitCode ?? 0)" : "DONE"
+            base = "Done"
         case .interrupted, .skipped:
-            base = status.rowState.label.uppercased()
+            base = status.rowState.label
         }
         if let timing, !timing.isEmpty {
             return "\(base) (\(timing))"

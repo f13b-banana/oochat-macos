@@ -70,7 +70,8 @@ class ChatViewModel: ObservableObject {
     private var pendingArtifacts: [GeneratedArtifactReference] = []
     private var pendingArtifactWarnings: [String] = []
     private var textBeforeVoiceInput = ""
-    private var activeExecutionRunID: UUID? {
+    /// The run for the request in flight; the transcript shows it even before its first step arrives.
+    private(set) var activeExecutionRunID: UUID? {
         didSet { reportActivity() }
     }
 
@@ -779,7 +780,6 @@ extension ChatViewModel {
                         id: "approval-\(request.id)",
                         tool: request.tool,
                         target: request.targetSummary,
-                        risk: request.riskLevel,
                         decision: recordedDecision
                     )
                 )

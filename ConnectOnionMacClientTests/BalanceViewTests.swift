@@ -55,6 +55,32 @@ final class BalanceViewTests: XCTestCase {
     }
 
     @MainActor
+    func testSecretCopyIsConcealedAndClearsWhenUnchanged() async throws {
+        let pasteboard = NSPasteboard(name: .init("BalanceViewTests.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+
+        XCTAssertTrue(SecretPasteboard.copy("seed words", to: pasteboard, clearAfter: .milliseconds(50)))
+        XCTAssertEqual(pasteboard.string(forType: .string), "seed words")
+        XCTAssertNotNil(pasteboard.data(forType: SecretPasteboard.concealedType))
+
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertNil(pasteboard.string(forType: .string))
+    }
+
+    @MainActor
+    func testSecretCopyLeavesLaterClipboardContentAlone() async throws {
+        let pasteboard = NSPasteboard(name: .init("BalanceViewTests.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+
+        SecretPasteboard.copy("api key", to: pasteboard, clearAfter: .milliseconds(50))
+        pasteboard.clearContents()
+        pasteboard.setString("something else", forType: .string)
+
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(pasteboard.string(forType: .string), "something else")
+    }
+
+    @MainActor
     private func makeAppViewModel() -> AppViewModel {
         let suiteName = "BalanceViewTests.\(UUID().uuidString)"
         guard let storage = UserDefaults(suiteName: suiteName) else {

@@ -4,10 +4,11 @@ import ConnectOnionKit
 /// The frame around a hosted request. An approval draws its own amber frame (`OONotice`);
 /// so only the other requests get the kit's flat card.
 private struct InteractionFrame: ViewModifier {
-    let isApproval: Bool
+    /// The content draws its own OONotice, so it gets no card around it.
+    let isNotice: Bool
 
     func body(content: Content) -> some View {
-        if isApproval {
+        if isNotice {
             content
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
@@ -31,6 +32,8 @@ struct HostedInteractionCard: View {
     // Trust and Stop sit behind More, so the card leads with Allow once and Skip.
     @State private var showsMoreActions = false
     @State private var hoveredAskOption: String?
+    /// The command runs past the well's 200 pt, so its bottom edge fades to say there's more.
+    @State private var valueHasMoreBelow = false
 
     init(
         viewModel: ChatViewModel,
@@ -67,7 +70,7 @@ struct HostedInteractionCard: View {
                         .textSelection(.enabled)
                 }
             }
-            .modifier(InteractionFrame(isApproval: isApproval))
+            .modifier(InteractionFrame(isNotice: isNotice))
         }
         .frame(width: conversationWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
@@ -95,9 +98,11 @@ struct HostedInteractionCard: View {
         showsMoreActions = false
     }
 
-    private var isApproval: Bool {
-        guard case .approval? = viewModel.pendingInteraction else { return false }
-        return true
+    private var isNotice: Bool {
+        switch viewModel.pendingInteraction {
+        case .approval?, .ulwCheckpoint?: return true
+        default: return false
+        }
     }
 
     @ViewBuilder
@@ -448,17 +453,33 @@ struct HostedInteractionCard: View {
             Text(label)
                 .font(AppTypography.mono(size: AppFontSize.footnote, weight: .semibold))
                 .foregroundStyle(OOColor.inkSecondary)
-            Text(value)
-                .font(AppTypography.mono(size: AppFontSize.caption))
-                .foregroundStyle(OOColor.ink)
-                .textSelection(.enabled)
-                .lineLimit(3)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // Show the whole value so the user sees everything they approve.
+            ScrollView(.vertical) {
+                Text(value)
+                    .font(AppTypography.mono(size: AppFontSize.caption))
+                    .foregroundStyle(OOColor.ink)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 200)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height - geometry.visibleRect.maxY > 1
+            } action: { _, hasMore in
+                valueHasMoreBelow = hasMore
+            }
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: valueHasMoreBelow ? 0.75 : 1),
+                        .init(color: .black.opacity(valueHasMoreBelow ? 0.1 : 1), location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
         }
         .padding(OOSpace.medium)
         .background(approvalWell)
-        .help(value)
     }
 
     @ViewBuilder
@@ -502,26 +523,24 @@ struct HostedInteractionCard: View {
     private func ulwCheckpointContent(
         _ request: ConnectOnionULWCheckpointRequest
     ) -> some View {
-        Label("Accept mode checkpoint", systemImage: "exclamationmark.shield.fill")
-            .font(.headline)
-            .foregroundColor(AppPalette.error)
-
-        Text(
-            "The agent completed \(request.turnsUsed) of "
+        OONotice(
+            .decision,
+            title: "Full access checkpoint",
+            message: "The agent completed \(request.turnsUsed) of "
                 + "\(request.maxTurns) autonomous turns without tool approvals."
-        )
-        .textSelection(.enabled)
+        ) {
+            HStack {
+                Button("Continue \(AgentExecutionMode.acceptTurns) turns") {
+                    viewModel.submitULWCheckpoint(.continueTenTurns)
+                }
+                .buttonStyle(.appPrimary)
+                .help("Full access ends after these turns.")
 
-        HStack {
-            Button("Continue 10 Turns") {
-                viewModel.submitULWCheckpoint(.continueTenTurns)
+                Button("Switch to Auto") {
+                    viewModel.submitULWCheckpoint(.returnToSafe)
+                }
+                .buttonStyle(.appSecondary)
             }
-            .buttonStyle(.appPrimary)
-
-            Button("Return to Safe") {
-                viewModel.submitULWCheckpoint(.returnToSafe)
-            }
-            .buttonStyle(.appSecondary)
         }
     }
 

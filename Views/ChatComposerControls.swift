@@ -68,7 +68,7 @@ struct ExecutionModeSelector: View {
             }
             // The system segmented control at regular size (story 162): a full-height target,
             // keyboard focus and VoiceOver come with it. The ⓘ beside it explains each mode.
-            Picker("Mode", selection: Binding(get: { viewModel.desiredExecutionMode }, set: select)) {
+            Picker("Permission mode", selection: Binding(get: { viewModel.desiredExecutionMode }, set: select)) {
                 ForEach(viewModel.offeredExecutionModes, id: \.self) { mode in
                     Text(mode.displayName)
                         .tag(mode)
@@ -87,12 +87,12 @@ struct ExecutionModeSelector: View {
                 Image(systemName: "info.circle")
                     .font(.system(size: AppFontSize.footnote, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 28, height: 28)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Explain execution modes")
-            .help("Explain execution modes")
+            .accessibilityLabel("Explain permission modes")
+            .help("Explain permission modes")
             .popover(isPresented: $isShowingModeGuide, arrowEdge: .bottom) {
                 ExecutionModeGuide(selectedMode: viewModel.desiredExecutionMode)
             }
@@ -163,7 +163,7 @@ private struct ExecutionModeGuide: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Execution modes")
+            Text("Permission mode")
                 .font(.headline)
 
             ForEach(AgentExecutionMode.allCases, id: \.self) { mode in
