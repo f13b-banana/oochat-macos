@@ -27,19 +27,18 @@ struct HostedInteractionCard: View {
     @State private var fieldValues: [String: String] = [:]
     @State private var feedback = ""
     @State private var inviteCode = ""
-    @State private var showsApprovalDetails = false
     @State private var isConfirmingTrust = false
+    // Trust and Stop sit behind More, so the card leads with Allow once and Skip.
+    @State private var showsMoreActions = false
     @State private var hoveredAskOption: String?
 
     init(
         viewModel: ChatViewModel,
         conversationWidth: CGFloat,
-        showsApprovalDetails: Bool = false,
         confirmsTrust: Bool = false
     ) {
         self.viewModel = viewModel
         self.conversationWidth = conversationWidth
-        _showsApprovalDetails = State(initialValue: showsApprovalDetails)
         _isConfirmingTrust = State(initialValue: confirmsTrust)
     }
 
@@ -93,6 +92,7 @@ struct HostedInteractionCard: View {
         feedback = ""
         inviteCode = ""
         isConfirmingTrust = false
+        showsMoreActions = false
     }
 
     private var isApproval: Bool {
@@ -242,92 +242,70 @@ struct HostedInteractionCard: View {
 
         OONotice(
             .decision,
-            title: request.plainEnglishExplanation,
+            title: OOApprovalDisclosure.summary(tool: request.tool, arguments: arguments),
             message: OOApprovalDisclosure.consequence(tool: request.tool, arguments: arguments)
         ) {
             VStack(alignment: .leading, spacing: OOSpace.medium) {
-                if let command = request.commandText {
-                    approvalValueBlock(label: "COMMAND", value: command)
-                } else if let target = request.targetSummary {
-                    approvalValueBlock(label: "TARGET", value: target)
-                }
-
-                approvalField(
-                    label: "APPLIES TO",
-                    text: OOApprovalDisclosure.scope(tool: request.tool, arguments: arguments)
-                )
-
                 if let description = request.description, !description.isEmpty {
                     Text(description)
                         .font(.subheadline)
-                        .foregroundStyle(OOColor.ink)
+                        .foregroundStyle(OOColor.inkSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                // What is being approved, shown in full rather than behind a disclosure.
+                if let command = request.commandText {
+                    approvalValueBlock(label: "COMMAND", value: command)
+                }
+                if let details = Self.argumentLines(arguments, hidingCommand: request.commandText != nil) {
+                    approvalArguments(details)
+                }
+
                 if !request.batchRemaining.isEmpty {
-                    Text("\(request.batchRemaining.count) additional tool call(s) remain in this batch.")
+                    Text("\(request.batchRemaining.count) more action\(request.batchRemaining.count == 1 ? "" : "s") waiting")
                         .font(.caption)
                         .foregroundStyle(OOColor.inkSecondary)
                 }
 
-                approvalDetails(request)
                 approvalButtons
-                approvalTrust(tool: request.tool)
+                // Kept open while the trust question is showing, so closing More can't hide it.
+                if showsMoreActions || isConfirmingTrust {
+                    TextField("Optional feedback", text: $feedback)
+                        .textFieldStyle(.roundedBorder)
+                    approvalTrust(tool: request.tool)
+                    stopButton
+                }
             }
         }
     }
 
-    private func approvalField(label: String, text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: OOSpace.small) {
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(OOColor.inkSecondary)
+    private static let commandArgumentKeys: Set<String> = ["command", "cmd", "script"]
+
+    /// One `key: value` line per argument, sorted. The command keys are left out when the
+    /// command already has its own block.
+    static func argumentLines(_ arguments: [String: JSONValue], hidingCommand: Bool) -> String? {
+        let lines = arguments
+            .filter { !hidingCommand || !commandArgumentKeys.contains($0.key) }
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key): \($0.value.stringValue ?? $0.value.displayText)" }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    /// The arguments in the same well as the command; long content scrolls.
+    private func approvalArguments(_ text: String) -> some View {
+        ScrollView(.vertical) {
             Text(text)
-                .font(.subheadline)
+                .font(AppTypography.mono(size: AppFontSize.caption))
                 .foregroundStyle(OOColor.ink)
-                .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(OOSpace.medium)
         }
+        .frame(maxHeight: 200)
+        .background(approvalWell)
     }
 
-    /// The raw values and the optional feedback line, folded until the person asks for them.
-    @ViewBuilder
-    private func approvalDetails(_ request: ConnectOnionApprovalRequest) -> some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                showsApprovalDetails.toggle()
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .rotationEffect(.degrees(showsApprovalDetails ? 90 : 0))
-                Text(showsApprovalDetails ? "Hide details" : "Review parameters")
-                    .font(.caption.weight(.medium))
-            }
-            .foregroundStyle(OOColor.inkSecondary)
-            .frame(minHeight: ooMinimumTarget, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-
-        if showsApprovalDetails {
-            ScrollView(.vertical) {
-                Text(request.arguments.displayText)
-                    .font(AppTypography.mono(size: AppFontSize.caption))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(OOSpace.medium)
-            }
-            .frame(maxHeight: 150)
-            .background(approvalWell)
-
-            TextField("Optional feedback", text: $feedback)
-                .textFieldStyle(.roundedBorder)
-        }
-    }
-
-    /// Allow once is the one green button. Skip tool sits beside it, outlined.
+    /// Allow once is the one green button. Skip tool and More sit beside it.
     private var approvalButtons: some View {
         HStack(spacing: OOSpace.small) {
             Button {
@@ -346,11 +324,27 @@ struct HostedInteractionCard: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.ooSecondary)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    showsMoreActions.toggle()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("More")
+                    Image(systemName: showsMoreActions ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.ooSecondary)
+            .accessibilityValue(showsMoreActions ? "expanded" : "collapsed")
         }
     }
 
     /// The host trusts a whole tool for the session, not one command, so the first click only asks
-    /// and names the tool. The grant is sent from the second click. Stop -> reject and stop.
+    /// and names the tool. The grant is sent from the second click.
     @ViewBuilder
     private func approvalTrust(tool: String) -> some View {
         let title = OOApprovalDisclosure.trustTitle(tool: tool)
@@ -368,7 +362,7 @@ struct HostedInteractionCard: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: OOSpace.small) {
-                    Button {
+                    Button(role: .cancel) {
                         withAnimation(.easeInOut(duration: 0.15)) {
                             isConfirmingTrust = false
                         }
@@ -377,15 +371,24 @@ struct HostedInteractionCard: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.ooSecondary)
+                    // Esc backs out; no button here takes Return, so the keyboard never grants trust.
+                    .keyboardShortcut(.cancelAction)
 
                     Button {
                         isConfirmingTrust = false
                         viewModel.submitApproval(.approveSession)
                     } label: {
-                        Text("Confirm trust")
-                            .frame(maxWidth: .infinity)
+                        // The question above names what is trusted; the button only repeats the verb.
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .accessibilityHidden(true)
+                            Text("Trust")
+                        }
+                        .foregroundStyle(OOColor.failureText)
+                        .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.ooSecondary)
+                    .accessibilityLabel("Confirm: \(title) for this session")
                 }
             }
             .padding(OOSpace.medium)
@@ -410,14 +413,24 @@ struct HostedInteractionCard: View {
             }
             .buttonStyle(.ooSecondary)
         }
+    }
 
+    /// Rejects the call and stops the response.
+    private var stopButton: some View {
         Button {
             viewModel.submitApproval(.rejectHard(feedback: feedback))
             feedback = ""
         } label: {
             Text("Stop response")
+                .foregroundStyle(OOColor.failureText)
+                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.ooQuiet(tint: OOColor.failureText))
+        .buttonStyle(.ooSecondary)
+        // Outlined in red so it reads as a button without competing with Allow once.
+        .overlay(
+            RoundedRectangle(cornerRadius: OORadius.medium, style: .continuous)
+                .stroke(OOColor.failureText, lineWidth: 1)
+        )
     }
 
     /// The white, thin-bordered box the command, the raw values and the trust question sit in.
