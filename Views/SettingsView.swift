@@ -469,7 +469,6 @@ struct AgentControlPanel: View {
     @State private var newAgentAddress = ""
     @State private var inputError: String?
     @State private var agentPendingDeletion: GeneralAgentConfiguration?
-    @State private var avatarEditorConfigID: UUID?
 
     private var addressAgents: [GeneralAgentConfiguration] {
         appViewModel.configurations.filter { configuration in
@@ -652,11 +651,10 @@ struct AgentControlPanel: View {
         let snapshot = appViewModel.agentConnectionSnapshots[configuration.id]
 
         return HStack(alignment: .top, spacing: 24) {
-            AgentAvatarView(
+            OOAvatarTile(
                 name: configuration.name,
-                textColorHex: configuration.avatarTextColorHex,
-                backgroundColorHex: configuration.avatarBackgroundColorHex,
-                size: 40
+                address: address,
+                size: .large
             )
             .overlay(alignment: .bottomTrailing) {
                 Circle()
@@ -733,29 +731,6 @@ struct AgentControlPanel: View {
         for configuration: GeneralAgentConfiguration
     ) -> some View {
         Button {
-            avatarEditorConfigID = configuration.id
-        } label: {
-            Image(systemName: "paintpalette")
-                .font(.system(size: 15, weight: .semibold))
-        }
-        .buttonStyle(.plain)
-        .foregroundColor(OOColor.inkSecondary)
-        .accessibilityLabel("Edit agent avatar colors")
-        .help("Edit avatar colors")
-        .popover(
-            isPresented: Binding(
-                get: { avatarEditorConfigID == configuration.id },
-                set: { isPresented in
-                    if !isPresented {
-                        avatarEditorConfigID = nil
-                    }
-                }
-            )
-        ) {
-            avatarEditor(for: configuration)
-        }
-
-        Button {
             appViewModel.refreshAgentStatus(for: configuration)
         } label: {
             Image(systemName: "arrow.clockwise")
@@ -776,96 +751,6 @@ struct AgentControlPanel: View {
         .foregroundColor(OOColor.inkSecondary)
         .accessibilityLabel("Remove agent")
         .help("Remove agent")
-    }
-
-    private func avatarEditor(for configuration: GeneralAgentConfiguration) -> some View {
-        let current = currentConfiguration(for: configuration)
-
-        return VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                AgentAvatarView(
-                    name: current.name,
-                    textColorHex: current.avatarTextColorHex,
-                    backgroundColorHex: current.avatarBackgroundColorHex,
-                    size: 48
-                )
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Agent avatar")
-                        .font(.headline)
-                    Text("\(current.name) initials")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            ColorPicker(
-                "Initial color",
-                selection: avatarTextColorBinding(for: configuration),
-                supportsOpacity: false
-            )
-
-            ColorPicker(
-                "Background color",
-                selection: avatarBackgroundColorBinding(for: configuration),
-                supportsOpacity: false
-            )
-
-            Button("Reset to black and white") {
-                appViewModel.updateAgentAvatar(
-                    current,
-                    textColorHex: nil,
-                    backgroundColorHex: nil
-                )
-            }
-            .buttonStyle(.borderless)
-        }
-        .padding(18)
-        .frame(width: 260)
-    }
-
-    private func avatarTextColorBinding(
-        for configuration: GeneralAgentConfiguration
-    ) -> Binding<Color> {
-        Binding(
-            get: {
-                let current = currentConfiguration(for: configuration)
-                return AgentAvatarStyle.textColor(from: current.avatarTextColorHex)
-            },
-            set: { color in
-                let current = currentConfiguration(for: configuration)
-                appViewModel.updateAgentAvatar(
-                    current,
-                    textColorHex: color.hexString,
-                    backgroundColorHex: current.avatarBackgroundColorHex
-                )
-            }
-        )
-    }
-
-    private func avatarBackgroundColorBinding(
-        for configuration: GeneralAgentConfiguration
-    ) -> Binding<Color> {
-        Binding(
-            get: {
-                let current = currentConfiguration(for: configuration)
-                return AgentAvatarStyle.backgroundColor(from: current.avatarBackgroundColorHex)
-            },
-            set: { color in
-                let current = currentConfiguration(for: configuration)
-                appViewModel.updateAgentAvatar(
-                    current,
-                    textColorHex: current.avatarTextColorHex,
-                    backgroundColorHex: color.hexString
-                )
-            }
-        )
-    }
-
-    private func currentConfiguration(
-        for configuration: GeneralAgentConfiguration
-    ) -> GeneralAgentConfiguration {
-        appViewModel.configurations.first { $0.id == configuration.id } ?? configuration
     }
 
     @ViewBuilder

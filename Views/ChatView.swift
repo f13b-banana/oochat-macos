@@ -8,12 +8,11 @@ struct ChatView: View {
     private let fullConversationWidth: CGFloat
     let historySelectionRevision: Int
 
-    @AppStorage("chatFontSize") private var chatFontSize: Double = 15
+    @AppStorage(ChatFontSize.storageKey) private var chatFontSize = ChatFontSize.standard
     @AppStorage("isControlCenterOpen") private var isControlCenterOpen = true
     @AppStorage("controlCenterPaneWidth") private var paneWidth = Double(ControlCenterPaneWidth.initial)
     @State private var dragStartWidth: Double?
     @State private var detailWidth: CGFloat = 0
-    @State private var keyMonitor: Any?
     @State private var isFileDropTargeted = false
     /// When this chat started connecting; the chip turns "Connecting…" into "Can't connect" after 10 s.
     @State private var connectingSince: Date?
@@ -24,10 +23,9 @@ struct ChatView: View {
     @State private var isAtBottom = true
     /// Something new arrived while you were scrolled up; shown as a dot on Latest.
     @State private var hasUnseenLatest = false
+    /// Chat ▸ Scroll to Top or Scroll to Latest, run by the scroll view's reader.
+    @State private var scrollRequest: ChatScrollRequest?
 
-    private let minChatFontSize: Double = 12
-    private let maxChatFontSize: Double = 26
-    private let chatFontStep: Double = 1
     private let skillPaletteMaxHeight: CGFloat = 240
     private let skillPaletteRowHeight: CGFloat = 44
 
@@ -54,6 +52,8 @@ struct ChatView: View {
                     viewModel.appViewModel.activeChat = nil
                 }
             }
+            // The menu bar's Chat and View commands act on this chat.
+            .focusedSceneValue(\.chatMenu, menuActions)
     }
 
     @ViewBuilder
@@ -610,28 +610,18 @@ struct ChatView: View {
                         }
                     }
 
-                    HStack {
-                        Button("") {
-                            withAnimation {
-                                proxy.scrollTo("topOfChat", anchor: .top)
-                            }
-                        }
-                        .keyboardShortcut(.upArrow, modifiers: [.command])
-                        .opacity(0)
-                        .frame(width: 0, height: 0)
-                        .accessibilityHidden(true)
-
-                        Button("") {
-                            withAnimation {
-                                proxy.scrollTo("bottomOfChat", anchor: .bottom)
-                            }
-                        }
-                        .keyboardShortcut(.downArrow, modifiers: [.command])
-                        .opacity(0)
-                        .frame(width: 0, height: 0)
-                        .accessibilityHidden(true)
+                }
+                .onChange(of: scrollRequest) { _, request in
+                    guard let request else {
+                        return
                     }
-                    .frame(width: 0, height: 0)
+                    withAnimation {
+                        if request.toTop {
+                            proxy.scrollTo("topOfChat", anchor: .top)
+                        } else {
+                            proxy.scrollTo("bottomOfChat", anchor: .bottom)
+                        }
+                    }
                 }
             }
             }
@@ -770,13 +760,16 @@ struct ChatView: View {
                         return .handled
                     }
                     .onKeyPress(.escape) {
-                        guard skillPaletteQuery != nil,
-                              !filteredSkills.isEmpty else {
+                        if skillPaletteQuery != nil, !filteredSkills.isEmpty {
+                            viewModel.inputText = ""
+                            selectedSkillIndex = 0
+                            return .handled
+                        }
+                        // With nothing to close, Esc in the composer stops the reply, as ⌘. does.
+                        guard canStopResponse else {
                             return .ignored
                         }
-
-                        viewModel.inputText = ""
-                        selectedSkillIndex = 0
+                        viewModel.interruptAgent()
                         return .handled
                     }
 
@@ -862,20 +855,9 @@ struct ChatView: View {
         .onAppear {
             viewModel.connectIfNeeded()
             viewModel.startStatusMonitoring()
-
-            if keyMonitor == nil {
-                keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                    handleKeyDown(event)
-                }
-            }
         }
         .onDisappear {
             viewModel.stopStatusMonitoring()
-
-            if let keyMonitor {
-                NSEvent.removeMonitor(keyMonitor)
-                self.keyMonitor = nil
-            }
         }
     }
 
@@ -885,6 +867,10 @@ struct ChatView: View {
         } else {
             return AppPalette.primaryAction
         }
+    }
+
+    private var canStopResponse: Bool {
+        viewModel.canInterruptAgent && !viewModel.isInterruptRequested
     }
 
     private var canPerformPrimaryInputAction: Bool {
@@ -949,18 +935,6 @@ struct ChatView: View {
             : "Start voice input"
     }
 
-    private func increaseFontSize() {
-        chatFontSize = min(chatFontSize + chatFontStep, maxChatFontSize)
-    }
-
-    private func decreaseFontSize() {
-        chatFontSize = max(chatFontSize - chatFontStep, minChatFontSize)
-    }
-
-    private func resetFontSize() {
-        chatFontSize = 15
-    }
-
     private func openFilePanel() {
         guard viewModel.canAttachFiles else { return }
 
@@ -978,29 +952,36 @@ struct ChatView: View {
         }
     }
 
-    func handleKeyDown(_ event: NSEvent) -> NSEvent? {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    /// What the Chat and View menus act on while this chat is open.
+    var menuActions: ChatMenuActions {
+        ChatMenuActions(
+            canStop: canStopResponse,
+            stop: viewModel.interruptAgent,
+            scrollToTop: { scrollRequest = ChatScrollRequest(toTop: true) },
+            scrollToLatest: { scrollRequest = ChatScrollRequest(toTop: false) },
+            hasControlCenter: viewModel.dashboard != nil && viewModel.openWorkRoomID == nil
+        )
+    }
+}
 
-        guard flags.contains(.command) else {
-            return event
-        }
+/// One press of Scroll to Top or Scroll to Latest. The id makes a second press of the same one count.
+struct ChatScrollRequest: Equatable {
+    let id = UUID()
+    let toTop: Bool
+}
 
-        switch event.charactersIgnoringModifiers {
-        case "=", "+":
-            increaseFontSize()
-            return nil
+/// The chat text size behind View ▸ Bigger, Smaller and Actual Size.
+enum ChatFontSize {
+    static let storageKey = "chatFontSize"
+    static let standard = 15.0
+    static let range = 12.0...26.0
 
-        case "-":
-            decreaseFontSize()
-            return nil
+    static func bigger(_ size: Double) -> Double {
+        min(size + 1, range.upperBound)
+    }
 
-        case "0":
-            resetFontSize()
-            return nil
-
-        default:
-            return event
-        }
+    static func smaller(_ size: Double) -> Double {
+        max(size - 1, range.lowerBound)
     }
 }
 

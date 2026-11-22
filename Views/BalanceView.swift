@@ -651,9 +651,7 @@ struct DockerConfigurationView: View {
                 Spacer()
 
                 Button("Apply & Restart") {
-                    Task {
-                        await dockerRuntime.applyConfigurationAndRestart()
-                    }
+                    dockerRuntime.isConfirmingRestart = true
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(dockerRuntime.status.isBusy)

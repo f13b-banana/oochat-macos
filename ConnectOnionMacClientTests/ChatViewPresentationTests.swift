@@ -196,9 +196,7 @@ extension ChatViewTests {
         let configuration = GeneralAgentConfiguration(
             name: "View Test Agent",
             connectionType: .byAddress,
-            addressConfiguration: nil,
-            avatarTextColorHex: "#FFFFFF",
-            avatarBackgroundColorHex: "#123456"
+            addressConfiguration: nil
         )
         let session = ChatSession(agentConfigId: configuration.id, title: "Chat")
         var remappedMessages = messages
@@ -459,27 +457,5 @@ extension ChatViewTests {
 
         XCTAssertGreaterThan(hostingView.fittingSize.width, 0, file: file, line: line)
         XCTAssertGreaterThan(hostingView.fittingSize.height, 0, file: file, line: line)
-    }
-
-    @MainActor
-    func keyEvent(
-        characters: String,
-        modifiers: NSEvent.ModifierFlags
-    ) -> NSEvent {
-        guard let event = NSEvent.keyEvent(
-            with: .keyDown,
-            location: .zero,
-            modifierFlags: modifiers,
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            characters: characters,
-            charactersIgnoringModifiers: characters,
-            isARepeat: false,
-            keyCode: 0
-        ) else {
-            preconditionFailure("Failed to create keyboard event")
-        }
-        return event
     }
 }

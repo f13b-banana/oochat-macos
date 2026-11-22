@@ -17,8 +17,6 @@ nonisolated struct GeneralAgentConfiguration: Identifiable, Codable, Hashable {
     var name: String
     var connectionType: AgentConnectionType
     var addressConfiguration: AgentAddressConfiguration?
-    var avatarTextColorHex: String?
-    var avatarBackgroundColorHex: String?
     /// The 0x Address a Direct URL agent reported when last reached. nil until then, and for a 0x agent;
     /// older data decodes as nil.
     var resolvedAddress: String?
@@ -32,6 +30,15 @@ nonisolated struct GeneralAgentConfiguration: Identifiable, Codable, Hashable {
         return ConnectOnionAgentTarget.normalized(raw)
     }
 
+    /// Served from localhost, so it needs the Docker runtime on this Mac.
+    var isOnThisMac: Bool {
+        guard let raw = addressConfiguration?.agentAddress,
+              let host = URL(string: raw)?.host?.lowercased() else {
+            return false
+        }
+        return ["localhost", "127.0.0.1", "::1"].contains(host)
+    }
+
     /// The lower-cased 0x Address this agent answers as, where the app knows it. Agents match by it:
     /// a Direct URL agent and a 0x agent with the same Address are one agent.
     var agentAddress: String? {
@@ -40,15 +47,15 @@ nonisolated struct GeneralAgentConfiguration: Identifiable, Codable, Hashable {
 }
 
 extension GeneralAgentConfiguration {
-    /// Configurations saved before `isClaudeStation` existed have no such key.
+    /// Configurations saved before `isClaudeStation` existed have no such key. Ones saved while
+    /// avatars had their own colours still carry `avatarTextColorHex` and `avatarBackgroundColorHex`:
+    /// those keys are skipped here and dropped the next time the list is saved.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         connectionType = try container.decode(AgentConnectionType.self, forKey: .connectionType)
         addressConfiguration = try container.decodeIfPresent(AgentAddressConfiguration.self, forKey: .addressConfiguration)
-        avatarTextColorHex = try container.decodeIfPresent(String.self, forKey: .avatarTextColorHex)
-        avatarBackgroundColorHex = try container.decodeIfPresent(String.self, forKey: .avatarBackgroundColorHex)
         resolvedAddress = try container.decodeIfPresent(String.self, forKey: .resolvedAddress)
         isClaudeStation = try container.decodeIfPresent(Bool.self, forKey: .isClaudeStation) ?? false
     }
