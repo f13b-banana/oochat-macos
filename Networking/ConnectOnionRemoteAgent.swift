@@ -871,6 +871,10 @@ extension ConnectOnionRemoteAgentClient {
                 onEvent: onEvent
             )
 
+        case OIPFrameType.providerInvocation, OIPFrameType.providerActivity,
+             OIPFrameType.providerMessage:
+            await onEvent(.workRoomFrame(OIPServerFrame.decode(event.mapValues { JSONValue(any: $0) })))
+
         case "intent", "thinking", "llm_call", "llm_result",
              "tool_result", "eval", "tool_call":
             await recordLiveUsageEvent(event, endpoint: endpoint)

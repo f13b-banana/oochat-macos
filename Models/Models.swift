@@ -548,6 +548,16 @@ extension ToolCallExecutionItem {
         }
         return nil
     }
+    /// Finished and, for shell tools, exited 0. `statusLabel` treats a missing
+    /// "Exit code:" line as 0, so this matches what the row already displays.
+    var isCleanlyFinished: Bool {
+        status == .done && (shellExitCode ?? 0) == 0
+    }
+
+    /// Finished but not cleanly: an error status or a non-zero exit code.
+    var needsAttention: Bool {
+        status != .running && !isCleanlyFinished
+    }
 
     private var fileArgument: String? {
         stringArgument(["path", "file_path", "filepath", "filename", "target", "file"])

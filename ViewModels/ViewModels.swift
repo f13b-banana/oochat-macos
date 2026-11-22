@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import ConnectOnionKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -72,6 +73,7 @@ class AppViewModel: ObservableObject {
     private var retryRequestsByMessageID: [UUID: ChatRetryRequest] = [:]
     private var retryRequestOrder: [UUID] = []
     private var deletedRemoteSessionIDs: Set<String> = []
+    private var workRoomStores: [UUID: WorkRoomStore] = [:]
     private let retryRequestCountLimit = 20
     private let retryAttachmentByteLimit = 50 * 1_024 * 1_024
 
@@ -226,6 +228,7 @@ class AppViewModel: ObservableObject {
         for sessionId in sessionIds {
             executionItemsBySession.removeValue(forKey: sessionId)
             executionRunsBySession.removeValue(forKey: sessionId)
+            workRoomStores.removeValue(forKey: sessionId)
         }
         forgetDrafts(for: sessionIds)
         generatedArtifactStore.removeArtifacts(artifactReferences)
@@ -246,6 +249,7 @@ class AppViewModel: ObservableObject {
         for sessionId in orphanIDs {
             executionItemsBySession.removeValue(forKey: sessionId)
             executionRunsBySession.removeValue(forKey: sessionId)
+            workRoomStores.removeValue(forKey: sessionId)
         }
         forgetDrafts(for: orphanIDs)
         orphanedSessions = []
@@ -264,6 +268,7 @@ class AppViewModel: ObservableObject {
         messages.removeAll { $0.sessionId == session.id }
         executionItemsBySession.removeValue(forKey: session.id)
         executionRunsBySession.removeValue(forKey: session.id)
+        workRoomStores.removeValue(forKey: session.id)
         forgetDrafts(for: [session.id])
         generatedArtifactStore.removeArtifacts(artifactReferences)
 
@@ -497,6 +502,18 @@ class AppViewModel: ObservableObject {
 
     func findExecutionRuns(for sessionId: UUID) -> [ExecutionRun] {
         return executionRunsBySession[sessionId] ?? []
+    }
+
+    /// The conversation's Work Room store, kept here like its execution runs so a
+    /// Work Room Card survives switching chats.
+    /// In memory only; removed with the chat.
+    func workRoomStore(for sessionId: UUID) -> WorkRoomStore {
+        if let store = workRoomStores[sessionId] {
+            return store
+        }
+        let store = WorkRoomStore()
+        workRoomStores[sessionId] = store
+        return store
     }
 
     func setExecutionItems(_ items: [ExecutionItem], for sessionId: UUID) {
