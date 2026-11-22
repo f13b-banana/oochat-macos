@@ -152,7 +152,6 @@ struct SidebarView: View {
             }
 
             VStack(spacing: 2) {
-                usageButton
                 settingsButton
             }
             .padding(.horizontal, 10)
@@ -242,7 +241,7 @@ struct SidebarView: View {
 
             Text("\(onlineAgentCount) online")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OOColor.inkSecondary)
                 .lineLimit(1)
                 .fixedSize()
         }
@@ -315,8 +314,11 @@ struct SidebarView: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: AppFontSize.caption))
                         .foregroundColor(.secondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .padding(.trailing, -8)
                 .accessibilityLabel("Clear search")
                 .help("Clear search")
             }
@@ -348,9 +350,10 @@ struct SidebarView: View {
                 Text("AGENTS")
                     .font(.system(size: AppFontSize.footnote, weight: .semibold))
                     .tracking(0.8)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(OOColor.inkSecondary)
                     .fixedSize()
                 }
+                .frame(minHeight: 28)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -399,7 +402,7 @@ struct SidebarView: View {
 private extension SidebarView {
     /// Builds an agent row with connection state and inline editing controls.
     private func agentRow(for config: GeneralAgentConfiguration) -> some View {
-        let sessions = appViewModel.sessions
+        let sessions = appViewModel.visibleSessions
             .filter { $0.agentConfigId == config.id }
             .sorted { $0.updatedAt > $1.updatedAt }
         let isConnected = appViewModel.isAgentConnected(config)
@@ -462,7 +465,7 @@ private extension SidebarView {
                     HStack(spacing: 8) {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(OOColor.inkSecondary)
                             .frame(width: 18)
                             .rotationEffect(
                                 .degrees(state.areChatsExpanded ? 0 : -90)
@@ -654,7 +657,7 @@ private extension SidebarView {
                 Text(group.label.uppercased())
                     .font(.system(size: AppFontSize.footnote, weight: .semibold))
                     .tracking(0.5)
-                    .foregroundColor(.secondary.opacity(0.7))
+                    .foregroundColor(OOColor.inkSecondary)
                     .padding(.leading, 4)
                     .padding(.top, 4)
 
@@ -802,6 +805,7 @@ private extension SidebarView {
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 7)
+                    .frame(minHeight: 28)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -998,41 +1002,6 @@ private extension SidebarView {
             hoveredSettings = isHovering
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private var usageButton: some View {
-        Button {
-            guard appViewModel.selection != .usage else { return }
-            appViewModel.previousSelection = appViewModel.selection
-            appViewModel.selection = .usage
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "chart.bar.xaxis")
-                    .font(.system(size: AppFontSize.subheadline, weight: .medium))
-                Text("Usage")
-                    .font(.system(size: AppFontSize.body, weight: .semibold))
-                Spacer()
-            }
-            .foregroundColor(.primary)
-            .padding(.horizontal, 10)
-            .frame(height: 38)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(
-                        appViewModel.selection == .usage
-                            ? OOColor.hover
-                            : (hoveredUsage ? OOColor.surface : Color.clear)
-                    )
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering in
-            hoveredUsage = isHovering
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityLabel("Usage")
-        .help("View local model usage")
     }
 
     private var emptyState: some View {

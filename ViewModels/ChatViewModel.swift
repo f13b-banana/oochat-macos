@@ -11,7 +11,9 @@ class ChatViewModel: ObservableObject {
     @Published var messages: [ChatMessage] = []
     @Published var executionItems: [ExecutionItem] = []
     @Published var executionRuns: [ExecutionRun] = []
-    @Published var inputText: String = ""
+    @Published var inputText: String = "" {
+        didSet { appViewModel.setDraft(inputText, for: session.id) }
+    }
     @Published var pendingAttachments: [ConnectOnionInputFile] = []
     @Published var attachmentError: String?
     /// Runtime question or approval awaiting the user's answer; sending and
@@ -60,6 +62,8 @@ class ChatViewModel: ObservableObject {
         executionItems = appViewModel.findExecutionItems(for: session.id)
         executionRuns = appViewModel.findExecutionRuns(for: session.id)
         latestUsage = messages.reversed().compactMap(\.usage).first
+        // Reopen the chat with whatever was left unsent.
+        inputText = appViewModel.draft(for: session.id)
 
         setupBindings()
     }
