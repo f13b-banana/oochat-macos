@@ -24,7 +24,6 @@ actor ConnectOnionRemoteAgentClient {
     private var webSocketTask: (any ConnectOnionWebSocketTasking)?
     private var pendingRuntimeInputs: [ConnectOnionPendingRuntimeInput] = []
     private var pendingRuntimeMessageIDs: [UUID] = []
-    private var seenEventIDs: Set<String> = []
     private var seenArtifactIDs: Set<String> = []
     private var isAwaitingOnboarding = false
     private var cancelRequested = false
@@ -36,6 +35,10 @@ actor ConnectOnionRemoteAgentClient {
     private var pendingApprovalRequestID: String?
     private var isSending = false
     private var liveLLMModelsByID: [String: String] = [:]
+    private var eventLedger = EventLedger()
+    /// chat_items from the last CONNECTED. The host sends them when its copy of the
+    /// session is newer, which is how a turn that finished while we were away is found.
+    private var connectedChatItems: [[String: Any]]?
 
     init(
         configuredTarget: String,
@@ -124,6 +127,7 @@ actor ConnectOnionRemoteAgentClient {
         let inputID = UUID().uuidString
         sessionState.executionState = .running
         sessionState.activeInputID = inputID
+        sessionState.activePrompt = prompt
         sessionState.inputWasSent = false
         sessionState.wasInterrupted = false
         sessionStore.save(sessionState)
@@ -348,23 +352,27 @@ extension ConnectOnionRemoteAgentClient {
     ) async throws -> String {
         var lastError: Error?
 
-        for attempt in 0..<4 {
+        let policy = ReconnectPolicy()
+
+        var state = reduce(.idle, .open, maxAttempts: policy.maxAttempts)
+
+        while case .connecting(let attempt) = state {
             if cancelRequested {
                 throw interruptEscalated
                     ? ConnectOnionRemoteError.interrupted
                     : ConnectOnionRemoteError.cancelled
             }
+
             do {
                 if attempt > 0 {
                     await onUpdate(
                         ConnectOnionTransportUpdate(
                             status: "Reconnecting",
-                            detail: "Attempt \(attempt + 1) of 4",
+                            detail: "Attempt \(attempt + 1) of \(policy.maxAttempts)",
                             isLive: false
                         )
                     )
-                    let delay = UInt64(1 << (attempt - 1)) * 1_000_000_000
-                    try await sleep(delay)
+                    try await sleep(UInt64(policy.delay(for: attempt) * 1_000_000_000))
                 }
 
                 return try await runConnection(
@@ -377,6 +385,7 @@ extension ConnectOnionRemoteAgentClient {
             } catch {
                 lastError = error
                 closeSocket()
+                state = reduce(state, .socketClosed, maxAttempts: policy.maxAttempts)
             }
         }
 
@@ -411,6 +420,16 @@ extension ConnectOnionRemoteAgentClient {
             onUpdate: onUpdate,
             onEvent: onEvent
         )
+        // The INPUT already went out and the host has finished that turn: take the reply
+        // from CONNECTED instead of refusing. Never sends the INPUT again.
+        if let settled = await settleFinishedTurn(
+            connectedStatus: connectedStatus,
+            endpoint: request.endpoint,
+            onUpdate: onUpdate,
+            onEvent: onEvent
+        ) {
+            return settled
+        }
         try await sendInitialInputIfNeeded(
             request,
             connectedStatus: connectedStatus,
@@ -438,6 +457,7 @@ extension ConnectOnionRemoteAgentClient {
         onEvent: @escaping EventHandler
     ) async throws -> (any ConnectOnionWebSocketTasking, String) {
         closeSocket()
+        connectedChatItems = nil
         let task = webSocketFactory(request.endpoint.webSocketURL)
         webSocketTask = task
         task.resume()
@@ -536,12 +556,16 @@ extension ConnectOnionRemoteAgentClient {
         guard let eventID = event["id"] as? String else {
             return true
         }
+
         let dedupeKey = Self.eventDedupeKey(for: event, id: eventID)
-        guard seenEventIDs.insert(dedupeKey).inserted else {
+
+        guard eventLedger.record(eventID: dedupeKey) else {
             return false
         }
+
         sessionState.lastMessageID = eventID
         sessionStore.save(sessionState)
+
         return true
     }
 
@@ -623,6 +647,7 @@ extension ConnectOnionRemoteAgentClient {
             interruptDeadlineTask = nil
             sessionState.executionState = .idle
             sessionState.activeInputID = nil
+            sessionState.activePrompt = nil
             sessionState.inputWasSent = false
             // The cancelled run is now cleanly terminal, so the flag has done
             // its recovery-blocking job. Clear it here or it survives to the
@@ -669,6 +694,72 @@ extension ConnectOnionRemoteAgentClient {
         return framedInputID == sessionState.activeInputID
     }
 
+    /// A turn that finished while this client was away (app quit, socket dropped) is not
+    /// replayed: CONNECTED says "connected" and the turn sits in chat_items. Take its reply
+    /// only if the turn's user message is the prompt we sent. Otherwise return nil, and
+    /// sendInitialInputIfNeeded refuses as before without resending anything.
+    private func settleFinishedTurn(
+        connectedStatus: String,
+        endpoint: ConnectOnionResolvedEndpoint,
+        onUpdate: @escaping UpdateHandler,
+        onEvent: @escaping EventHandler
+    ) async -> String? {
+        // A run the user stopped is never recovered, here or in recoverIfNeeded.
+        guard sessionState.inputWasSent,
+              !sessionState.wasInterrupted,
+              connectedStatus != "running",
+              let prompt = sessionState.activePrompt,
+              let turn = Self.finishedTurn(matching: prompt, in: connectedChatItems),
+              let reply = turn.last(where: { $0["type"] as? String == "agent" })?["content"] as? String,
+              !reply.isEmpty else {
+            return nil
+        }
+        sessionState.executionState = .idle
+        sessionState.activeInputID = nil
+        sessionState.activePrompt = nil
+        sessionState.inputWasSent = false
+        sessionState.wasInterrupted = false
+        sessionStore.save(sessionState)
+        closeSocket()
+        await onEvent(.recoveryState("Recovered completed session"))
+        await onUpdate(
+            ConnectOnionTransportUpdate(
+                status: "Connected",
+                detail: connectionDetail(for: endpoint),
+                isLive: true
+            )
+        )
+        return reply
+    }
+
+    /// The chat items after the last user message, only when that message is `prompt`.
+    /// nil when there are none, or the last turn belongs to an older message (our INPUT
+    /// never arrived), whose reply must not be shown as this prompt's answer.
+    nonisolated static func finishedTurn(
+        matching prompt: String,
+        in chatItems: [[String: Any]]?
+    ) -> [[String: Any]]? {
+        guard let chatItems else {
+            return nil
+        }
+        var lastUserContent: String?
+        var turn: [[String: Any]] = []
+        for item in chatItems {
+            if item["type"] as? String == "user" {
+                lastUserContent = item["content"] as? String
+                turn.removeAll()
+            } else {
+                turn.append(item)
+            }
+        }
+        let expected = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let lastUserContent,
+              lastUserContent.trimmingCharacters(in: .whitespacesAndNewlines) == expected else {
+            return nil
+        }
+        return turn
+    }
+
     private func completeOutput(
         _ event: [String: Any],
         endpoint: ConnectOnionResolvedEndpoint,
@@ -689,6 +780,7 @@ extension ConnectOnionRemoteAgentClient {
         saveSession(from: event["session"])
         sessionState.executionState = .idle
         sessionState.activeInputID = nil
+        sessionState.activePrompt = nil
         sessionState.inputWasSent = false
         interruptRequested = false
         // Reaching a normal output is terminal for any in-flight interrupt too;
@@ -851,6 +943,7 @@ extension ConnectOnionRemoteAgentClient {
                 }
                 sessionState.sessionID = sessionID
                 sessionStore.save(sessionState)
+                connectedChatItems = event["chat_items"] as? [[String: Any]]
                 if event["server_newer"] as? Bool == true {
                     saveSession(from: event["session"])
                 }
@@ -960,6 +1053,7 @@ extension ConnectOnionRemoteAgentClient {
                 saveSession(from: result["session"])
                 sessionState.executionState = .idle
                 sessionState.activeInputID = nil
+                sessionState.activePrompt = nil
                 sessionState.inputWasSent = false
                 sessionStore.save(sessionState)
                 await onEvent(.recoveryState("Recovered completed session"))
@@ -1306,8 +1400,13 @@ extension ConnectOnionRemoteAgentClient {
     private func connectFrame(
         for endpoint: ConnectOnionResolvedEndpoint
     ) throws -> [String: JSONValue] {
-        // Read back with JSONDecoder, not JSONValue(any:), so a stored 0 or 1 stays a number.
-        let session = sessionState.sessionData.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
+        // While settling an INPUT that already went out, send no turn history. The host then
+        // counts its own copy as newer and returns chat_items, so a turn that finished while
+        // we were away can be read back. Otherwise read back with JSONDecoder, not
+        // JSONValue(any:), so a stored 0 or 1 stays a number.
+        let session = sessionState.inputWasSent
+            ? nil
+            : sessionState.sessionData.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
         return try frames(for: endpoint).connect(
             direct: endpoint.isDirect,
             sessionID: sessionState.sessionID,
@@ -1493,6 +1592,7 @@ extension ConnectOnionRemoteAgentClient {
         interruptRequested = false
         sessionState.executionState = .idle
         sessionState.activeInputID = nil
+        sessionState.activePrompt = nil
         sessionState.inputWasSent = false
         // Escalation forces the run terminal; drop the flag with it so a later
         // turn is not left muted by a stale interrupt marker.
