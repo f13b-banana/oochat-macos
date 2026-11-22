@@ -20,8 +20,6 @@ struct ChatView: View {
     @FocusState private var isInputFocused: Bool
     @State private var selectedSkillIndex = 0
     @State private var isKeyboardNavigatingSkills = false
-    /// The Work Room shown in place of the chat, by id, so every render reads the live room.
-    @State private var openWorkRoomID: String?
     /// Whether you're at (or near) the bottom. Scrolled up, new messages don't pull you down.
     @State private var isAtBottom = true
     /// About 1.5 windows above the newest message; only then does Jump to latest show.
@@ -48,9 +46,24 @@ struct ChatView: View {
     }
 
     var body: some View {
+        content
+            // The agent pane reads this chat's Work Rooms, skills and Control Center from here.
+            .onAppear {
+                viewModel.appViewModel.activeChat = viewModel
+            }
+            .onDisappear {
+                if viewModel.appViewModel.activeChat === viewModel {
+                    viewModel.appViewModel.activeChat = nil
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if viewModel.isStation {
             stationDetail
-        } else if let openWorkRoomID, let workRoom = viewModel.workRooms.workRoom(id: openWorkRoomID) {
+        } else if let openWorkRoomID = viewModel.openWorkRoomID,
+                  let workRoom = viewModel.workRooms.workRoom(id: openWorkRoomID) {
             workRoomDetail(workRoom)
         } else {
             chatDetail
@@ -85,7 +98,7 @@ struct ChatView: View {
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Button {
-                        openWorkRoomID = nil
+                        viewModel.openWorkRoomID = nil
                     } label: {
                         Label("Back", systemImage: "chevron.left")
                             .labelStyle(.titleAndIcon)
@@ -495,7 +508,7 @@ struct ChatView: View {
                                         messageFontSize: chatFontSize,
                                         conversationWidth: conversationWidth,
                                         workRooms: viewModel.workRooms,
-                                        onOpenWorkRoom: { openWorkRoomID = $0 }
+                                        onOpenWorkRoom: { viewModel.openWorkRoomID = $0 }
                                     )
                                         .id(run.id)
                                 }
@@ -507,7 +520,7 @@ struct ChatView: View {
                                     messageFontSize: chatFontSize,
                                     conversationWidth: conversationWidth,
                                     workRooms: viewModel.workRooms,
-                                    onOpenWorkRoom: { openWorkRoomID = $0 }
+                                    onOpenWorkRoom: { viewModel.openWorkRoomID = $0 }
                                 )
                                     .id(run.id)
                             }

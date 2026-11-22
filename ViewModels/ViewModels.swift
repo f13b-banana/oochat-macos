@@ -55,6 +55,10 @@ class AppViewModel: ObservableObject {
     /// Approve or Working for the open chat, reported by its ChatViewModel. The Mac keeps only
     /// the open chat connected, so no other chat can be waiting or working.
     @Published private(set) var liveActivity: [UUID: SidebarChatStatus] = [:]
+    /// The agent last picked on the rail; the pane shows it while no chat is open.
+    @Published var focusedAgentID: UUID?
+    /// The open chat's view model, so the agent pane can show its Work Rooms, skills and Control Center.
+    @Published var activeChat: ChatViewModel?
     /// Bumped on every explicit history selection so views can re-focus the
     /// session even when the selection value itself did not change.
     @Published private(set) var sessionSelectionRevision = 0

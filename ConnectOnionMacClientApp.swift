@@ -71,6 +71,8 @@ struct ConnectOnionMacClientApp: App {
                 .frame(minWidth: 900, minHeight: 600)
         }
         .commands {
+            // ⌘N starts a chat (the sidebar's New chat), not a second window.
+            CommandGroup(replacing: .newItem) {}
             DockerRuntimeCommands(dockerRuntime: .shared)
         }
     }
