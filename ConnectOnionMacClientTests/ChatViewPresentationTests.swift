@@ -1,9 +1,39 @@
 import AppKit
 import SwiftUI
+import ConnectOnionKit
 import XCTest
 @testable import ConnectOnionMacClient
 
 extension ChatViewTests {
+    // A chat from a previous identity shows its transcript, with the label and the new-chat action
+    // where the composer was. The sidebar row carries the label too.
+    @MainActor
+    func testAPreviousIdentityChatRendersTheNewChatBarInPlaceOfTheComposer() throws {
+        let storage = try XCTUnwrap(UserDefaults(suiteName: "ChatViewTests.\(UUID().uuidString)"))
+        let appViewModel = AppViewModel(storage: storage, historyKeyStore: InMemoryPrivateKeyStore())
+        let configuration = GeneralAgentConfiguration(name: "Old Agent", connectionType: .byAddress)
+        let session = ChatSession(
+            agentConfigId: configuration.id,
+            identityAddress: "0x" + String(repeating: "cd", count: 32),
+            title: "Old"
+        )
+        appViewModel.configurations = [configuration]
+        appViewModel.sessions = [session]
+        appViewModel.messages = [ChatMessage(sessionId: session.id, role: .user, content: "old")]
+        let viewModel = ChatViewModel(
+            session: session,
+            configuration: configuration,
+            service: ConnectOnionService(isLinked: { false }, linkNotifications: NotificationCenter()),
+            appViewModel: appViewModel
+        )
+
+        render(viewModel)
+        renderView(SidebarView(appViewModel: appViewModel), width: 300)
+        renderView(PreviousIdentityComposerBar {}, width: 720, height: 80)
+        XCTAssertEqual(PreviousIdentity.label, "From a previous identity")
+        XCTAssertEqual(PreviousIdentity.startNewChat, "Start a new chat with this agent")
+    }
+
     @MainActor
     func testUnlinkedRunsIncludeOnlyUserVisibleTraces() async {
         let sessionID = UUID()

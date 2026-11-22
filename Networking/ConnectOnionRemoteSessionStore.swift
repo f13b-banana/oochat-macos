@@ -92,8 +92,13 @@ nonisolated final class ConnectOnionRemoteSessionStore {
     private let initialSessionID: String?
 
     init(conversationID: UUID?, initialSessionID: String?) {
-        key = conversationID.map { "connectonion.remote-session.\($0.uuidString)" }
+        key = conversationID.map(Self.key(for:))
         self.initialSessionID = initialSessionID
+    }
+
+    /// The UserDefaults key of one conversation's resume bookmark.
+    static func key(for conversationID: UUID) -> String {
+        "connectonion.remote-session.\(conversationID.uuidString)"
     }
 
     func load() -> ConnectOnionRemoteSessionState {
@@ -132,8 +137,7 @@ nonisolated func connectOnionPersistedRemoteSessionID(
     for conversationID: UUID,
     storage: UserDefaults = .standard
 ) -> String? {
-    let key = "connectonion.remote-session.\(conversationID.uuidString)"
-    guard let data = storage.data(forKey: key),
+    guard let data = storage.data(forKey: ConnectOnionRemoteSessionStore.key(for: conversationID)),
           let state = try? JSONDecoder().decode(
               ConnectOnionRemoteSessionState.self,
               from: data

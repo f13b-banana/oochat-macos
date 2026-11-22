@@ -10,6 +10,12 @@
 	<string>Fonts</string>
 	<key>ConnectOnionDockerImage</key>
 	<string>ghcr.io/openonion/oochat-macos-agent:1.0.2</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_oochat-link._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Link this Mac with your other Apple devices over your local network, so they share your OO Chat identity.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>oo-chat uses the microphone only when you dictate a message.</string>
 </dict>

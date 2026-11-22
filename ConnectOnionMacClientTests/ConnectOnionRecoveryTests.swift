@@ -688,6 +688,94 @@ extension ConnectOnionRemoteAgentTests {
             ["agent_profile", "dashboard:20"]
         )
     }
+
+    // Catch-up on open needs no viewer: the profile visit already carries the host's chat_items.
+    // It never claims a running turn, since only a viewer can follow one to its end.
+    func testTheProfileVisitCatchesUpFromTheHostsChatItems() async throws {
+        let address = makeAddress("a9")
+        let resolver = makeResolver { request in
+            (
+                makeHTTPResponse(for: request, statusCode: 200),
+                try makeJSONData(["name": "Moved Agent", "address": address])
+            )
+        }
+        let socket = try ScriptedWebSocketTask(events: [
+            [
+                "type": "CONNECTED",
+                "status": "running",
+                "session_id": "moved-on",
+                "chat_items": [
+                    ["type": "user", "content": "q"],
+                    ["type": "agent", "content": "a"],
+                    ["type": "user", "content": "still going"]
+                ]
+            ],
+            ["type": "AGENT_PROFILE", "name": "oo"],
+            ["type": "DASHBOARD_SNAPSHOT", "html": "<main>starter</main>", "session_id": "moved-on"]
+        ])
+        let client = ConnectOnionRemoteAgentClient(
+            configuredTarget: "https://agent.test",
+            conversationID: nil,
+            resolver: resolver,
+            identityStore: makeEphemeralIdentityStore(),
+            webSocketFactory: { _ in socket },
+            sleep: { _ in }
+        )
+        let recorder = RemoteProtocolRecorder()
+        try await client.loadAgentProfile(onEvent: { await recorder.record($0) })
+
+        let events = await recorder.snapshot().events
+        XCTAssertEqual(events.filter { $0.hasPrefix("catch_up") }, ["catch_up:3:false"])
+    }
+
+    // After a Device Link replaced the key, the same client's next connection signs as the new Address.
+    func testAReconnectAfterAKeyReplaceSignsAsTheNewAddress() async throws {
+        let address = makeAddress("aa")
+        let resolver = makeResolver { request in
+            (
+                makeHTTPResponse(for: request, statusCode: 200),
+                try makeJSONData(["name": "Linked Agent", "address": address])
+            )
+        }
+        let sockets = try (0..<2).map { _ in
+            try ScriptedWebSocketTask(events: [
+                ["type": "CONNECTED", "status": "new", "session_id": "linked"],
+                ["type": "AGENT_PROFILE", "name": "oo"],
+                ["type": "DASHBOARD_SNAPSHOT", "html": "<main>x</main>", "session_id": "linked"]
+            ])
+        }
+        let opened = OpenedSockets(sockets)
+        let store = makeEphemeralIdentityStore()
+        let client = ConnectOnionRemoteAgentClient(
+            configuredTarget: "https://agent.test",
+            conversationID: nil,
+            resolver: resolver,
+            identityStore: store,
+            webSocketFactory: { _ in opened.next() },
+            sleep: { _ in }
+        )
+        let original = try store.loadOrCreateIdentity().address
+        try await client.loadAgentProfile(onEvent: { _ in })
+
+        let newKey = Curve25519.Signing.PrivateKey()
+        try store.replacePrivateKey(with: newKey.rawRepresentation)
+        try await client.loadAgentProfile(onEvent: { _ in })
+
+        let signers = try sockets.map { try $0.sentJSONObjects().first?["from"] as? String }
+        XCTAssertEqual(signers, [original, "0x" + Hex.encode(newKey.publicKey.rawRepresentation)])
+    }
+}
+
+/// Hands out pre-made sockets in order, one per connection.
+private final class OpenedSockets: @unchecked Sendable {
+    private let lock = NSLock()
+    private var sockets: [ScriptedWebSocketTask]
+
+    init(_ sockets: [ScriptedWebSocketTask]) { self.sockets = sockets }
+
+    func next() -> ScriptedWebSocketTask {
+        lock.withLock { sockets.removeFirst() }
+    }
 }
 
 extension ConnectOnionRemoteAgentTests {

@@ -1,4 +1,5 @@
 import Combine
+import ConnectOnionKit
 import CryptoKit
 import XCTest
 @testable import ConnectOnionMacClient
@@ -52,6 +53,33 @@ extension ConnectOnionServiceTests {
         XCTAssertEqual(viewModel.configurations, [configuration])
         XCTAssertEqual(duplicateResult, .duplicate)
         XCTAssertEqual(viewModel.addAgent("0x1234"), .invalid)
+    }
+
+    // Adding an Address this Mac already has, in any case or known only behind a Direct URL, adds nothing;
+    // saving one with a name updates that agent.
+    @MainActor
+    func testAnAddressThisMacHasIsOneAgentHoweverItIsAdded() async throws {
+        let viewModel = AppViewModel(
+            storage: makeIsolatedDefaults(),
+            localAgentDefinitions: [],
+            resolveAgentEndpoint: { _ in throw ConnectOnionRemoteError.agentOffline }
+        )
+        var byURL = GeneralAgentConfiguration(
+            name: "Mine", connectionType: .byAddress,
+            addressConfiguration: AgentAddressConfiguration(agentAddress: "http://localhost:8000")
+        )
+        byURL.resolvedAddress = "0x" + String(repeating: "ab", count: 32)
+        viewModel.configurations = [byURL]
+
+        XCTAssertEqual(viewModel.addAgent("0X" + String(repeating: "Ab", count: 32)), .duplicate)
+        viewModel.saveAgent(GeneralAgentConfiguration(
+            name: "Renamed", connectionType: .byAddress,
+            addressConfiguration: AgentAddressConfiguration(agentAddress: "0x" + String(repeating: "AB", count: 32))
+        ))
+
+        XCTAssertEqual(viewModel.configurations.map(\.id), [byURL.id])
+        XCTAssertEqual(viewModel.configurations.map(\.name), ["Renamed"])
+        XCTAssertEqual(viewModel.sessions.map(\.agentConfigId), [byURL.id])
     }
 
     @MainActor
@@ -126,6 +154,42 @@ extension ConnectOnionServiceTests {
                 version: "1.2.1"
             )
         )
+        XCTAssertEqual(viewModel.configurations.map(\.name), ["Saved Agent"], "the reported name never replaces a chosen one")
+    }
+
+    // An agent added by Address alone takes the name it reports, once, as its default.
+    @MainActor
+    func testTheReportedNameOnlyFillsTheDefaultOnAdd() async throws {
+        let address = "0x" + String(repeating: "ab", count: 32)
+        var reported = "Workspace Agent"
+        let viewModel = AppViewModel(
+            storage: makeIsolatedDefaults(),
+            localAgentDefinitions: [],
+            resolveAgentEndpoint: { _ in
+                ConnectOnionResolvedEndpoint(
+                    agentAddress: address, webSocketURL: URL(string: "wss://agent.example/ws")!,
+                    httpBaseURL: nil, isDirect: false,
+                    info: ConnectOnionAgentInfo(
+                        name: reported, address: address, tools: [], model: nil, trust: nil, version: nil, acceptedInputs: nil
+                    )
+                )
+            }
+        )
+        guard case .added(let configuration) = viewModel.addAgent(address) else { return XCTFail("added") }
+
+        await viewModel.refreshAgentStatusAndWait(for: configuration)
+        reported = "Renamed On The Host"
+        await viewModel.refreshAgentStatusAndWait(for: configuration)
+
+        XCTAssertEqual(viewModel.configurations.map(\.name), ["Workspace Agent"])
+
+        // A giver's name that happens to look like this Mac's default is still the giver's choice.
+        let linked = try XCTUnwrap(DeviceLinkAgentName(address: "0x" + String(repeating: "cd", count: 32), name: "0xcdcd…cdcd"))
+        viewModel.applyLinkedAgentNames([linked])
+        let arrived = try XCTUnwrap(viewModel.configurations.last)
+        await viewModel.refreshAgentStatusAndWait(for: arrived)
+
+        XCTAssertEqual(viewModel.configurations.last?.name, "0xcdcd…cdcd")
     }
 
     @MainActor
@@ -556,6 +620,43 @@ extension ConnectOnionServiceTests {
             from: savedData
         )
         XCTAssertEqual(savedMessages.last?.usage, usage)
+    }
+
+    // A bash approval arrives as an ack, a tool call and approval_needed back to back. Events
+    // sent with no gap between them must all reach the chat: a stream with no buffer keeps only
+    // the first one sent while the previous is still being handled.
+    @MainActor
+    func testChatKeepsEveryEventInABurst() async {
+        let appViewModel = AppViewModel(storage: makeIsolatedDefaults())
+        let configuration = GeneralAgentConfiguration(
+            name: "Main Agent",
+            connectionType: .byAddress,
+            addressConfiguration: AgentAddressConfiguration(
+                agentAddress: "0x" + String(repeating: "48", count: 32)
+            )
+        )
+        let session = ChatSession(agentConfigId: configuration.id, title: "Burst")
+        let service = ConnectOnionService(conversationID: session.id)
+        let viewModel = ChatViewModel(
+            session: session,
+            configuration: configuration,
+            service: service,
+            appViewModel: appViewModel
+        )
+
+        func agentReplies() -> [String] {
+            viewModel.messages.filter { $0.role == .agent }.map(\.content)
+        }
+
+        // Events reach the chat through a Task, so wait. One first, so the chat is listening;
+        // the two after it come with no gap.
+        service.incomingEvents.send(.output("one"))
+        await waitUntil { agentReplies().count == 1 }
+        service.incomingEvents.send(.output("two"))
+        service.incomingEvents.send(.output("three"))
+        await waitUntil { agentReplies().count == 3 }
+
+        XCTAssertEqual(agentReplies(), ["one", "two", "three"])
     }
 
     // MARK: - Redo the latest turn in place

@@ -143,16 +143,7 @@ nonisolated struct ConnectOnionRelayAgentInfo: Decodable {
 /// identity comparisons are byte-for-byte.
 nonisolated enum ConnectOnionAddress {
     static func normalized(_ value: String) -> String? {
-        let candidate = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard candidate.count == 66, candidate.hasPrefix("0x") else {
-            return nil
-        }
-
-        let hex = candidate.dropFirst(2)
-        guard hex.allSatisfy({ $0.isHexDigit }) else {
-            return nil
-        }
-        return "0x" + hex.lowercased()
+        AgentAddress.normalized(value.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 

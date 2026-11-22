@@ -51,6 +51,18 @@ nonisolated protocol ConnectOnionRemoteAgentProviding: AnyObject, Sendable {
     ) async -> Bool
     /// Cuts the saved session back to before your latest message, `prompt` (Retry and Edit).
     func rewindLatestTurn(prompt: String) async -> Bool
+    func observe(
+        onUpdate: @escaping ConnectOnionRemoteAgentClient.UpdateHandler,
+        onEvent: @escaping ConnectOnionRemoteAgentClient.EventHandler
+    ) async -> ViewerEnding
+}
+
+/// How a viewer connection (`observe`) ended.
+enum ViewerEnding: Equatable, Sendable {
+    /// A mirrored turn finished (its output or an interrupt arrived), so the next one can be awaited.
+    case turnFinished
+    /// Refused because the chat was busy, closed by a local send, or dropped.
+    case closed
 }
 
 extension ConnectOnionRemoteAgentProviding {

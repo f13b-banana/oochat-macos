@@ -18,7 +18,9 @@ class ChatViewModel: ObservableObject {
     @Published var attachmentError: String?
     /// Runtime question or approval awaiting the user's answer; sending and
     /// attaching stay disabled until it resolves.
-    @Published var pendingInteraction: ConnectOnionPendingInteraction?
+    @Published var pendingInteraction: ConnectOnionPendingInteraction? {
+        didSet { reportActivity() }
+    }
     @Published var interactionError: String?
     /// Why each failed message didn't go through. Kept for this run of the app only.
     @Published var failureByMessageID: [UUID: ChatFailure] = [:]
@@ -66,7 +68,9 @@ class ChatViewModel: ObservableObject {
     private var pendingArtifacts: [GeneratedArtifactReference] = []
     private var pendingArtifactWarnings: [String] = []
     private var textBeforeVoiceInput = ""
-    private var activeExecutionRunID: UUID?
+    private var activeExecutionRunID: UUID? {
+        didSet { reportActivity() }
+    }
 
     init(session: ChatSession, configuration: GeneralAgentConfiguration, service: ConnectOnionService, appViewModel: AppViewModel,
          voiceInputService: VoiceInputService? = nil) {
@@ -94,7 +98,36 @@ class ChatViewModel: ObservableObject {
         statusTask?.cancel()
     }
 
+    /// Tells the sidebar whether this chat is waiting on you or working.
+    /// `isRequestActive`: the service's new value, when it's what changed (a @Published sink
+    /// runs before the property updates).
+    private func reportActivity(isRequestActive: Bool? = nil) {
+        let status: SidebarChatStatus?
+        switch pendingInteraction {
+        case .approval:
+            status = .approval
+        // A question, an invite code, a plan or a checkpoint: yours to answer, not to approve.
+        case .askUser, .onboarding, .planReview, .ulwCheckpoint:
+            status = .reply
+        case nil:
+            // Working only while a request is in flight. A late trace event after the reply opens
+            // a run that nothing closes, and must not leave the row saying Working.
+            let isActive = isRequestActive ?? service.isAgentRequestActive
+            status = activeExecutionRunID != nil && isActive ? .working : nil
+        }
+        appViewModel.setLiveActivity(status, for: session.id)
+    }
+
     private func setupBindings() {
+        // dropFirst: the view model is made while the window draws; nothing has changed yet.
+        service.$isAgentRequestActive
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] isActive in
+                self?.reportActivity(isRequestActive: isActive)
+            }
+            .store(in: &cancellables)
+
         service.objectWillChange
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
@@ -309,6 +342,12 @@ class ChatViewModel: ObservableObject {
             finishActiveExecutionRun(with: .done)
             markOutstandingMessages(as: .sent)
 
+        case .mirroredUserMessage(let text):
+            appendMirroredUserMessage(text)
+
+        case .catchUp(let items, let isRunning):
+            catchUp(with: items, isRunning: isRunning)
+
         case .dashboard(let dashboard):
             // The host resends the page on every connect and reattach; an equal one changes nothing.
             if self.dashboard != dashboard {
@@ -392,6 +431,22 @@ class ChatViewModel: ObservableObject {
         appViewModel.agentConnectionSnapshots[configuration.id]
     }
 
+    /// Made under an Address this device no longer holds: readable, never connected or sent from.
+    /// Read live, since a link can stamp the chat while this view model exists.
+    var isFromPreviousIdentity: Bool {
+        appViewModel.isFromPreviousIdentity(storedRowOf: session)
+    }
+
+    /// Sends are refused in a previous-identity chat and in a Claude Station, which has its own composer.
+    private var acceptsSends: Bool {
+        !isFromPreviousIdentity && !isStation
+    }
+
+    /// The previous-identity chat's one action: a new chat with the same agent, as the current Address.
+    func startNewChat() {
+        appViewModel.createNewSession(for: configuration)
+    }
+
     /// This chat's status, from its own connection, never the background agent check.
     /// `connectingFor` is measured by the view, so "Connecting…" becomes "Can't connect" after 10 s.
     func connectionStatus(connectingFor: TimeInterval = 0) -> ChatConnectionStatus {
@@ -424,7 +479,7 @@ class ChatViewModel: ObservableObject {
     }
 
     func connectIfNeeded() {
-        if !service.isConnected {
+        if !service.isConnected, !isFromPreviousIdentity {
             service.connect(with: configuration)
         }
     }
@@ -571,7 +626,8 @@ extension ChatViewModel {
     /// summarize prompt so the request text is never empty.
     func sendMessage() {
         let trimmedInput = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedInput.isEmpty || !pendingAttachments.isEmpty, !isStation else { return }
+        guard !trimmedInput.isEmpty || !pendingAttachments.isEmpty,
+              !service.isMirroredTurn, acceptsSends else { return }
 
         if let validationError = attachmentValidationError {
             attachmentError = validationError
@@ -791,6 +847,45 @@ extension ChatViewModel {
             && !service.isInterruptRequested
     }
 
+    /// Another device's turn is streaming; Send stays off until it finishes.
+    var isReplyingElsewhere: Bool { service.isMirroredTurn }
+
+    /// A prompt typed on another device: shown as a user turn and given a run so the
+    /// reply streams into the transcript as for a local one.
+    private func appendMirroredUserMessage(_ text: String) {
+        prepareForNewRequest()
+        var message = ChatMessage(sessionId: session.id, role: .user, content: text)
+        message.status = .sent
+        messages.append(message)
+        appViewModel.addMessage(message)
+        startExecutionRun(for: message.id)
+        appViewModel.updateSessionDate(session)
+    }
+
+    /// Adds the host's turns this device has not seen, using the Kit's matcher shared with iOS.
+    private func catchUp(with items: [CatchUpItem], isRunning: Bool) {
+        let local = messages.map { CatchUpItem(role: $0.role == .user ? .user : .agent, text: $0.content) }
+        for step in MirroredTurn.catchUpSteps(host: items, local: local, isRunning: isRunning) {
+            switch step {
+            case .user(let text):
+                let message = ChatMessage(sessionId: session.id, role: .user, content: text)
+                messages.append(message)
+                appViewModel.addMessage(message)
+            case .agent(let text):
+                appendAgentMessage(text)
+            case .runningUser(let text, let isKnown):
+                if !isKnown {
+                    appendMirroredUserMessage(text)
+                } else if activeExecutionRunID == nil,
+                          let existing = messages.last(where: {
+                              $0.role == .user && MirroredTurn.sameText($0.content, text)
+                          }) {
+                    startExecutionRun(for: existing.id)
+                }
+            }
+        }
+    }
+
     var canInterruptAgent: Bool {
         configuration.connectionType == .byAddress
             && service.isAgentRequestActive
@@ -957,7 +1052,7 @@ extension ChatViewModel {
         title: String?,
         clearsComposer: Bool
     ) {
-        guard !service.isInterruptRequested, !isStation else { return }
+        guard !service.isInterruptRequested, acceptsSends else { return }
         let summaries = request.files.map {
             ChatAttachmentSummary(name: $0.name, byteCount: $0.byteCount)
         }
@@ -1000,6 +1095,7 @@ extension ChatViewModel {
     /// Your latest message, when it was sent, nothing is running, and it can be rebuilt to send again.
     private func latestRedoableMessageIndex() -> Int? {
         guard !isRedoing,
+              !isFromPreviousIdentity,
               pendingInteraction == nil,
               !service.isAgentRequestActive,
               !voiceInputService.isRecording,

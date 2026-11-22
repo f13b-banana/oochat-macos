@@ -621,7 +621,9 @@ struct ChatView: View {
                         .padding(.trailing, 6)
                 }
 
-                if pendingApproval != nil {
+                if viewModel.isFromPreviousIdentity {
+                    PreviousIdentityComposerBar(onStartNewChat: viewModel.startNewChat)
+                } else if pendingApproval != nil {
                     HostedInteractionCard(
                         viewModel: viewModel,
                         conversationWidth: conversationWidth
@@ -789,6 +791,12 @@ struct ChatView: View {
 
                 HStack(spacing: 8) {
                     connectionStatusChip
+
+                    if viewModel.isReplyingElsewhere {
+                        Text("Replying…")
+                            .font(.system(size: AppFontSize.caption))
+                            .foregroundStyle(.secondary)
+                    }
 
                     Spacer()
 

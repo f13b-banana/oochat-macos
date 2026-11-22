@@ -45,6 +45,7 @@
 		D3F3173A30789DC3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F3173930789DB3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift */; };
 		D3F3173C3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F3173B3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift */; };
 		DD0000013000000000000001 /* ViewModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000023000000000000002 /* ViewModelsTests.swift */; };
+		HR0000013000000000000001 /* HistoryRestoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = HR0000023000000000000002 /* HistoryRestoreTests.swift */; };
 		EE0000013000000000000001 /* ChatViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000023000000000000002 /* ChatViewTests.swift */; };
 		F00000013000000000000001 /* Resources/Fonts in Resources */ = {isa = PBXBuildFile; fileRef = F00000023000000000000002 /* Resources/Fonts */; };
 		F10000013000000000000001 /* SettingsViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000023000000000000002 /* SettingsViewTests.swift */; };
@@ -71,14 +72,15 @@
 		KB0800000000000000000001 /* WelcomeHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = KA0800000000000000000001 /* WelcomeHomeView.swift */; };
 		KD0000000000000000000001 /* ConnectOnionProtocolTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = KC0000000000000000000001 /* ConnectOnionProtocolTypes.swift */; };
 		KD0100000000000000000001 /* ConnectOnionEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = KC0100000000000000000001 /* ConnectOnionEndpointResolver.swift */; };
-		KD0200000000000000000001 /* ConnectOnionHistoryClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = KC0200000000000000000001 /* ConnectOnionHistoryClient.swift */; };
 		KD0300000000000000000001 /* ConnectOnionIdentityStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = KC0300000000000000000001 /* ConnectOnionIdentityStore.swift */; };
 		KD0400000000000000000001 /* ConnectOnionRemoteSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = KC0400000000000000000001 /* ConnectOnionRemoteSessionStore.swift */; };
 		KD0500000000000000000001 /* ConnectOnionEventDecoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = KC0500000000000000000001 /* ConnectOnionEventDecoding.swift */; };
 		KF0000000000000000000001 /* AgentTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0000000000000000000001 /* AgentTypes.swift */; };
 		KF0100000000000000000001 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0100000000000000000001 /* ChatViewModel.swift */; };
+		KF0100000000000000000006 /* AppViewModel+HostedHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0100000000000000000006 /* AppViewModel+HostedHistory.swift */; };
 		KF0100000000000000000002 /* ChatViewModel+WorkRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0100000000000000000002 /* ChatViewModel+WorkRoom.swift */; };
 		KF0100000000000000000003 /* ConnectOnionRemoteAgentProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0100000000000000000003 /* ConnectOnionRemoteAgentProviding.swift */; };
+		KF0100000000000000000005 /* ConnectOnionRemoteAgent+Usage.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0100000000000000000005 /* ConnectOnionRemoteAgent+Usage.swift */; };
 		KF0100000000000000000004 /* ConnectOnionRemoteAgentWorkRoomTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0100000000000000000004 /* ConnectOnionRemoteAgentWorkRoomTests.swift */; };
 		KF0200000000000000000001 /* BalanceViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = KE0200000000000000000001 /* BalanceViewModel.swift */; };
 		KH0000000000000000000001 /* ChatViewRenderingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = KG0000000000000000000001 /* ChatViewRenderingTests.swift */; };
@@ -144,6 +146,7 @@
 		D3F3173930789DB3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectOnionIdentityStore+PrivateKeyStoring.swift"; sourceTree = "<group>"; };
 		D3F3173B3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionConnectAdoptionTests.swift; sourceTree = "<group>"; };
 		DD0000023000000000000002 /* ViewModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelsTests.swift; sourceTree = "<group>"; };
+		HR0000023000000000000002 /* HistoryRestoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryRestoreTests.swift; sourceTree = "<group>"; };
 		EE0000023000000000000002 /* ChatViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewTests.swift; sourceTree = "<group>"; };
 		F00000023000000000000002 /* Resources/Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/Fonts; sourceTree = "<group>"; };
 		F10000023000000000000002 /* SettingsViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewTests.swift; sourceTree = "<group>"; };
@@ -170,14 +173,15 @@
 		KA0800000000000000000001 /* WelcomeHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeHomeView.swift; sourceTree = "<group>"; };
 		KC0000000000000000000001 /* ConnectOnionProtocolTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionProtocolTypes.swift; sourceTree = "<group>"; };
 		KC0100000000000000000001 /* ConnectOnionEndpointResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionEndpointResolver.swift; sourceTree = "<group>"; };
-		KC0200000000000000000001 /* ConnectOnionHistoryClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionHistoryClient.swift; sourceTree = "<group>"; };
 		KC0300000000000000000001 /* ConnectOnionIdentityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionIdentityStore.swift; sourceTree = "<group>"; };
 		KC0400000000000000000001 /* ConnectOnionRemoteSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionRemoteSessionStore.swift; sourceTree = "<group>"; };
 		KC0500000000000000000001 /* ConnectOnionEventDecoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionEventDecoding.swift; sourceTree = "<group>"; };
 		KE0000000000000000000001 /* AgentTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTypes.swift; sourceTree = "<group>"; };
 		KE0100000000000000000001 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		KE0100000000000000000006 /* AppViewModel+HostedHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppViewModel+HostedHistory.swift"; sourceTree = "<group>"; };
 		KE0100000000000000000002 /* ChatViewModel+WorkRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModel+WorkRoom.swift"; sourceTree = "<group>"; };
 		KE0100000000000000000003 /* ConnectOnionRemoteAgentProviding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionRemoteAgentProviding.swift; sourceTree = "<group>"; };
+		KE0100000000000000000005 /* ConnectOnionRemoteAgent+Usage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectOnionRemoteAgent+Usage.swift"; sourceTree = "<group>"; };
 		KE0100000000000000000004 /* ConnectOnionRemoteAgentWorkRoomTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionRemoteAgentWorkRoomTests.swift; sourceTree = "<group>"; };
 		KE0200000000000000000001 /* BalanceViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BalanceViewModel.swift; sourceTree = "<group>"; };
 		KG0000000000000000000001 /* ChatViewRenderingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewRenderingTests.swift; sourceTree = "<group>"; };
@@ -254,6 +258,7 @@
 				34A616282FEBF5F6009B8B1C /* ViewModels.swift */,
 				KE0000000000000000000001 /* AgentTypes.swift */,
 				KE0100000000000000000001 /* ChatViewModel.swift */,
+				KE0100000000000000000006 /* AppViewModel+HostedHistory.swift */,
 				KE0100000000000000000002 /* ChatViewModel+WorkRoom.swift */,
 				KE0200000000000000000001 /* BalanceViewModel.swift */,
 			);
@@ -304,6 +309,7 @@
 				CC0000043000000000000004 /* ConnectOnionServiceTests.swift */,
 				BB0000023000000000000002 /* WalletServiceTests.swift */,
 				DD0000023000000000000002 /* ViewModelsTests.swift */,
+				HR0000023000000000000002 /* HistoryRestoreTests.swift */,
 				EE0000023000000000000002 /* ChatViewTests.swift */,
 				KG0000000000000000000001 /* ChatViewRenderingTests.swift */,
 				KG0100000000000000000001 /* ChatViewPresentationTests.swift */,
@@ -351,9 +357,9 @@
 				D3F3173930789DB3006B5D63 /* ConnectOnionIdentityStore+PrivateKeyStoring.swift */,
 				34A616252FEBF5F6009B8B1C /* ConnectOnionService.swift */,
 				CC0000023000000000000002 /* ConnectOnionRemoteAgent.swift */,
+				KE0100000000000000000005 /* ConnectOnionRemoteAgent+Usage.swift */,
 				KE0100000000000000000003 /* ConnectOnionRemoteAgentProviding.swift */,
 				KC0100000000000000000001 /* ConnectOnionEndpointResolver.swift */,
-				KC0200000000000000000001 /* ConnectOnionHistoryClient.swift */,
 				KC0500000000000000000001 /* ConnectOnionEventDecoding.swift */,
 				KC0300000000000000000001 /* ConnectOnionIdentityStore.swift */,
 				KC0400000000000000000001 /* ConnectOnionRemoteSessionStore.swift */,
@@ -496,10 +502,10 @@
 				AA0000012FEBF5F6009B8B1C /* ConnectOnionMacClientApp.swift in Sources */,
 				AA0000022FEBF5F6009B8B1C /* ConnectOnionService.swift in Sources */,
 				CC0000013000000000000001 /* ConnectOnionRemoteAgent.swift in Sources */,
+				KF0100000000000000000005 /* ConnectOnionRemoteAgent+Usage.swift in Sources */,
 				KF0100000000000000000003 /* ConnectOnionRemoteAgentProviding.swift in Sources */,
 				KD0000000000000000000001 /* ConnectOnionProtocolTypes.swift in Sources */,
 				KD0100000000000000000001 /* ConnectOnionEndpointResolver.swift in Sources */,
-				KD0200000000000000000001 /* ConnectOnionHistoryClient.swift in Sources */,
 				D3B60E343084E8850012C501 /* IncompatibleAgentView.swift in Sources */,
 				KD0300000000000000000001 /* ConnectOnionIdentityStore.swift in Sources */,
 				KD0400000000000000000001 /* ConnectOnionRemoteSessionStore.swift in Sources */,
@@ -512,6 +518,7 @@
 				KF0000000000000000000001 /* AgentTypes.swift in Sources */,
 				82E31D61309889CF00559E2C /* AgentBalanceNotice.swift in Sources */,
 				KF0100000000000000000001 /* ChatViewModel.swift in Sources */,
+				KF0100000000000000000006 /* AppViewModel+HostedHistory.swift in Sources */,
 				KF0100000000000000000002 /* ChatViewModel+WorkRoom.swift in Sources */,
 				KF0200000000000000000001 /* BalanceViewModel.swift in Sources */,
 				1C3C632A3004F1D600BD248D /* DesignSystem.swift in Sources */,
@@ -547,6 +554,7 @@
 				D3F3173C3080F79C006B5D63 /* ConnectOnionConnectAdoptionTests.swift in Sources */,
 				BB0000013000000000000001 /* WalletServiceTests.swift in Sources */,
 				DD0000013000000000000001 /* ViewModelsTests.swift in Sources */,
+				HR0000013000000000000001 /* HistoryRestoreTests.swift in Sources */,
 				EE0000013000000000000001 /* ChatViewTests.swift in Sources */,
 				KH0000000000000000000001 /* ChatViewRenderingTests.swift in Sources */,
 				KH0100000000000000000001 /* ChatViewPresentationTests.swift in Sources */,
@@ -717,6 +725,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -751,6 +760,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;

@@ -288,6 +288,10 @@ nonisolated enum ConnectOnionTransportEvent: Sendable {
     case incompatible(OIPHandshake.Incompatibility)
     /// The newest DASHBOARD_SNAPSHOT
     case dashboard(OIPDashboard)
+    /// A prompt typed on another device holding this Identity (the host's `user_message` frame).
+    case mirroredUserMessage(String)
+    /// The turns the host already has for this chat, sent in CONNECTED when this device opens it.
+    case catchUp([CatchUpItem], isRunning: Bool)
     /// A decoded frame for the conversation's Work Room store (provider_invocation, provider_activity, provider_message).
     case workRoomFrame(OIPServerFrame)
     /// The handshake's CONNECTED, which rebuilds the Work Rooms from the host's chat items.
