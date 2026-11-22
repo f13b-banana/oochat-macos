@@ -7,6 +7,7 @@ enum NavigationItem: Hashable {
     case chooseAgent
     case usage
     case settings
+    case balance
 }
 
 /// Reachability of a configured agent as reported by its latest status probe.
