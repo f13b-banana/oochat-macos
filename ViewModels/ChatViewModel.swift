@@ -20,6 +20,8 @@ class ChatViewModel: ObservableObject {
     /// attaching stay disabled until it resolves.
     @Published var pendingInteraction: ConnectOnionPendingInteraction?
     @Published var interactionError: String?
+    /// Why each failed message didn't go through. Kept for this run of the app only.
+    @Published var failureByMessageID: [UUID: ChatFailure] = [:]
     @Published var recoveryStatus: String?
     @Published var incompatibility: OIPHandshake.Incompatibility?
     /// The newest DASHBOARD_SNAPSHOT for this chat - adds the session checks.
@@ -80,6 +82,17 @@ class ChatViewModel: ObservableObject {
         service.objectWillChange
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        // A chat that reaches its agent counts it as online (sidebar dot, count, skill cards).
+        // Only ever "online": going offline stays with the background check.
+        service.$isHostedAgentStatusLive
+            .removeDuplicates()
+            .filter { $0 }
+            .sink { [weak self] _ in
+                guard let self, self.configuration.connectionType == .byAddress else { return }
+                self.appViewModel.setAgentConnected(self.configuration, isConnected: true)
             }
             .store(in: &cancellables)
 
@@ -287,16 +300,31 @@ class ChatViewModel: ObservableObject {
             if case .onboarding? = pendingInteraction {
                 return
             }
+            let failedIDs = outstandingMessageIDs
             markOutstandingMessages(as: .error)
             if configuration.connectionType == .byAddress {
                 appViewModel.setAgentConnected(configuration, isConnected: false)
             }
-            appendAgentMessage(
-                "Error: \(message)",
-                replyToMessageID: replyToMessageID,
-                artifacts: consumePendingArtifacts(),
-                artifactWarnings: consumePendingArtifactWarnings()
-            )
+            // The reason goes on the message that failed, not in an agent reply.
+            let failure = ConnectOnionRemoteError.chatFailure(forDescription: message)
+            if failedIDs.isEmpty {
+                appendSystemNotice(failure.sentence(agentName: configuration.name))
+            } else {
+                for id in failedIDs {
+                    failureByMessageID[id] = failure
+                }
+            }
+            // Files the agent made before failing still belong in the chat.
+            let artifacts = consumePendingArtifacts()
+            let warnings = consumePendingArtifactWarnings()
+            if !artifacts.isEmpty || !warnings.isEmpty {
+                appendAgentMessage(
+                    "",
+                    replyToMessageID: replyToMessageID,
+                    artifacts: artifacts,
+                    artifactWarnings: warnings
+                )
+            }
         }
     }
 
@@ -311,6 +339,37 @@ class ChatViewModel: ObservableObject {
 
     var connectionSnapshot: AgentConnectionSnapshot? {
         appViewModel.agentConnectionSnapshots[configuration.id]
+    }
+
+    /// This chat's status, from its own connection, never the background agent check.
+    /// `connectingFor` is measured by the view, so "Connecting…" becomes "Can't connect" after 10 s.
+    func connectionStatus(connectingFor: TimeInterval = 0) -> ChatConnectionStatus {
+        if incompatibility != nil {
+            return .unreachable(.incompatible)
+        }
+        if service.isHostedAgentStatusLive {
+            return service.isAgentRequestActive ? .working : .live
+        }
+        if service.connectionError != nil
+            || ["Offline", "Connection error"].contains(service.hostedAgentStatus) {
+            return .unreachable(.noAnswer)
+        }
+        if service.isConnected {
+            return connectingFor >= ChatConnectionStatus.unreachableAfter
+                ? .unreachable(.noAnswer)
+                : .connecting
+        }
+        return .notConnected
+    }
+
+    var isConnecting: Bool {
+        connectionStatus() == .connecting
+    }
+
+    /// The status's Retry: drop this chat's connection and open it again.
+    func retryConnection() {
+        service.disconnect()
+        service.connect(with: configuration)
     }
 
     func connectIfNeeded() {
@@ -508,6 +567,27 @@ extension ChatViewModel {
             return false
         }
         return true
+    }
+
+    func canRetryFailedMessage(_ message: ChatMessage) -> Bool {
+        message.role == .user
+            && message.status == .error
+            && pendingInteraction == nil
+            && !service.isAgentRequestActive
+            && retryRequest(for: message) != nil
+    }
+
+    /// Sends a failed message again: the failed copy goes, a fresh one is sent in its place.
+    func retryFailedMessage(_ message: ChatMessage) {
+        guard canRetryFailedMessage(message),
+              let request = retryRequest(for: message) else {
+            return
+        }
+        failureByMessageID[message.id] = nil
+        messages.removeAll { $0.id == message.id }
+        appViewModel.messages.removeAll { $0.id == message.id }
+        attachmentError = nil
+        submitRequest(request, title: nil, clearsComposer: false)
     }
 
     func retryAgentMessage(_ agentMessage: ChatMessage) {
@@ -745,6 +825,22 @@ extension ChatViewModel {
         )
         messages.append(newMessage)
         appViewModel.addMessage(newMessage)
+    }
+
+    /// A problem that belongs to no message: one quiet row, not repeated.
+    private func appendSystemNotice(_ text: String) {
+        if let last = messages.last, last.role == .system, last.content == text {
+            return
+        }
+        let notice = ChatMessage(sessionId: session.id, role: .system, content: text)
+        messages.append(notice)
+        appViewModel.addMessage(notice)
+    }
+
+    private var outstandingMessageIDs: [UUID] {
+        messages
+            .filter { $0.status == .sending || $0.status == .queued }
+            .map(\.id)
     }
 
     private func consumePendingArtifacts() -> [GeneratedArtifactReference] {

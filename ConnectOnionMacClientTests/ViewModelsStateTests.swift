@@ -299,9 +299,9 @@ extension ViewModelsTests {
 
         XCTAssertEqual(viewModel.messages[0].status, .error)
         XCTAssertEqual(appViewModel.messages[0].status, .error)
-        XCTAssertEqual(viewModel.messages.last?.role, .agent)
-        XCTAssertEqual(viewModel.messages.last?.content, "Error: Request failed")
-        XCTAssertEqual(appViewModel.messages.last, viewModel.messages.last)
+        // The reason stays on the failed message; no "Error:" reply from the agent.
+        XCTAssertEqual(viewModel.messages.count, 1)
+        XCTAssertEqual(viewModel.failureByMessageID[message.id], .server("Request failed"))
         XCTAssertEqual(viewModel.interactionError, "Request failed")
     }
 
@@ -549,6 +549,70 @@ extension ViewModelsTests {
         let reloaded = AppViewModel(storage: storage, localAgentDefinitions: [])
 
         XCTAssertNil(reloaded.selection)
+    }
+
+    @MainActor
+    func testKnownErrorTextBecomesPlainWords() {
+        XCTAssertEqual(
+            ConnectOnionRemoteError.chatFailure(forDescription: "The ConnectOnion agent is offline"),
+            .agentOffline
+        )
+        XCTAssertEqual(
+            ConnectOnionRemoteError.chatFailure(
+                forDescription: "The hosted session could not be recovered safely. The original task was not resent."
+            ),
+            .notRecovered
+        )
+        XCTAssertEqual(
+            ConnectOnionRemoteError.chatFailure(forDescription: "Agent not connected: 0xabc"),
+            .server("Agent not connected: 0xabc")
+        )
+    }
+
+    @MainActor
+    func testErrorWithNothingWaitingAddsOneQuietRow() {
+        let appViewModel = makeViewModel()
+        let configuration = makeHostedConfiguration()
+        let session = ChatSession(agentConfigId: configuration.id, title: "Chat")
+        let viewModel = ChatViewModel(
+            session: session,
+            configuration: configuration,
+            service: ConnectOnionService(conversationID: session.id),
+            appViewModel: appViewModel
+        )
+
+        viewModel.handleIncomingEvent(.error("The ConnectOnion agent is offline"))
+        viewModel.handleIncomingEvent(.error("The ConnectOnion agent is offline"))
+
+        XCTAssertEqual(viewModel.messages.count, 1, "the same notice twice in a row shows once")
+        XCTAssertEqual(viewModel.messages.first?.role, .system)
+        XCTAssertEqual(viewModel.messages.first?.content, "Hosted Agent is offline.")
+    }
+
+    @MainActor
+    func testRetryReplacesTheFailedMessage() {
+        let appViewModel = makeViewModel()
+        let configuration = makeHostedConfiguration()
+        let session = ChatSession(agentConfigId: configuration.id, title: "Chat")
+        var message = ChatMessage(sessionId: session.id, role: .user, content: "hello")
+        message.status = .sending
+        appViewModel.messages = [message]
+        let viewModel = ChatViewModel(
+            session: session,
+            configuration: configuration,
+            service: ConnectOnionService(conversationID: session.id),
+            appViewModel: appViewModel
+        )
+        viewModel.handleIncomingEvent(.error("The hosted agent request timed out"))
+        let failed = viewModel.messages[0]
+        XCTAssertTrue(viewModel.canRetryFailedMessage(failed))
+
+        viewModel.retryFailedMessage(failed)
+
+        XCTAssertNil(viewModel.failureByMessageID[failed.id])
+        XCTAssertFalse(viewModel.messages.contains { $0.id == failed.id })
+        XCTAssertEqual(viewModel.messages.last?.content, "hello")
+        XCTAssertEqual(viewModel.messages.last?.status, .sending)
     }
 
     @MainActor
