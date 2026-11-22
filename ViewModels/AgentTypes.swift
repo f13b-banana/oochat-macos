@@ -3,12 +3,7 @@ import Foundation
 /// Sidebar selection: a chat session or one of the fixed utility screens.
 enum NavigationItem: Hashable {
     case session(UUID)
-    case newConfiguration
     case chooseAgent
-    case usage
-    case settings
-    case balance
-    case identity
 }
 
 /// Reachability of a configured agent as reported by its latest status probe.

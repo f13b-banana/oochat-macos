@@ -191,12 +191,12 @@ nonisolated enum ConnectOnionPlanReviewDecision: Hashable, Sendable {
 /// Reply to a ULW checkpoint: grant another block of turns or drop the agent
 /// back to safe mode.
 nonisolated enum ConnectOnionULWCheckpointDecision: Hashable, Sendable {
-    case continueTenTurns
+    case continueTurns
     case returnToSafe
 
     var message: [String: Any] {
         switch self {
-        case .continueTenTurns:
+        case .continueTurns:
             return ["action": "continue", "turns": AgentExecutionMode.acceptTurns]
         case .returnToSafe:
             return ["action": "switch_mode", "mode": "safe"]

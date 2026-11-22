@@ -8,268 +8,123 @@
 import ConnectOnionKit
 import SwiftUI
 
-/// Composes account, identity, Docker, appearance, and agent management settings.
+/// The Settings window, opened with ⌘, or the gear at the foot of the agent rail. One tab for
+/// each part of the app, as a Mac app's settings are laid out.
 struct SettingsView: View {
-    @Binding var appearanceMode: AppearanceMode
     @ObservedObject var appViewModel: AppViewModel
-    @State private var hoveredUsage = false
-    @State private var hoveredBalance = false
-    @State private var hoveredIdentity = false
-    @State private var hoveredAgent = false
-
-    let onBack: () -> Void
+    @ObservedObject var usageStore: UsageStore
+    var identityStore: ConnectOnionIdentityStore = .shared
 
     var body: some View {
-        ZStack {
-            AppBackground()
+        TabView {
+            GeneralSettingsView()
+                .frame(height: SettingsWindow.generalHeight)
+                .tabItem { Label("General", systemImage: "gearshape") }
 
-            GeometryReader { geometry in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        HStack(alignment: .top, spacing: 12) {
-                            Button(action: onBack) {
-                                Image(systemName: "arrow.left")
-                                    .font(.system(size: AppFontSize.subheadline, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 28, height: 28)
-                                    .background(AppPalette.surfaceMuted)
-                                    .clipShape(Circle())
-                                    .contentShape(Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Back")
-                            .help("Back")
-
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("Settings")
-                                    .font(.system(size: AppFontSize.pageTitle, weight: .semibold))
-
-                                Text("Manage your account, appearance, wallet, and agents.")
-                                    .font(.system(size: AppFontSize.body))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        usageButton
-
-                        balanceButton
-
-                        identityButton
-
-                        // BalanceView(appViewModel: appViewModel)
-
-                        agentButton
-
-                        // AgentControlPanel(appViewModel: appViewModel)
-                        //     .frame(maxWidth: .infinity)
-
-                        AppearanceSettingsView(appearanceMode: $appearanceMode)
-                    }
-                    .frame(maxWidth: 920, alignment: .leading)
-                    .padding(.horizontal, geometry.size.width < 760 ? 20 : 32)
-                    .padding(.top, 32)
-                    .padding(.bottom, 48)
-                    .frame(maxWidth: .infinity)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            SettingsScrollPage {
+                IdentitySettingsView(identityStore: identityStore, handlers: appViewModel.deviceLinkHandlers)
             }
-        }
-        .navigationTitle("Settings")
-    }
+            .frame(height: SettingsWindow.identityHeight)
+            .tabItem { Label("Identity", systemImage: "person.badge.key") }
 
-    private var usageButton: some View {
-        Button {
-            guard appViewModel.selection != .usage else { return }
-            appViewModel.previousSelection = appViewModel.selection
-            appViewModel.selection = .usage
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "chart.bar.xaxis")
-                    .font(.system(size: AppFontSize.subheadline, weight: .medium))
-                Text("Usage")
-                    .font(.system(size: AppFontSize.body, weight: .semibold))
-                Spacer()
-            }
-            .foregroundColor(.primary)
-            .padding(.horizontal, 10)
-            .frame(height: 38)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(
-                        appViewModel.selection == .usage
-                            ? OOColor.hover
-                            : (hoveredUsage ? OOColor.surface : Color.clear)
-                    )
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering in
-            hoveredUsage = isHovering
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityLabel("Usage")
-        .help("View local model usage")
-    }
+            AgentsSettingsView(appViewModel: appViewModel)
+                .frame(height: SettingsWindow.agentsHeight)
+                .tabItem { Label("Agents", systemImage: "person.2") }
 
-    private var balanceButton: some View {
-        Button {
-            guard appViewModel.selection != .balance else { return }
-            appViewModel.previousSelection = appViewModel.selection
-            appViewModel.selection = .balance
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "wallet.pass")
-                    .font(.system(size: AppFontSize.subheadline, weight: .medium))
-                Text("Wallet and Docker")
-                    .font(.system(size: AppFontSize.body, weight: .semibold))
-                Spacer()
-            }
-            .foregroundColor(.primary)
-            .padding(.horizontal, 10)
-            .frame(height: 38)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(
-                        appViewModel.selection == .balance
-                            ? OOColor.hover
-                            : (hoveredBalance ? OOColor.surface : Color.clear)
-                    )
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering in
-            hoveredBalance = isHovering
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityLabel("Usage")
-        .help("View local model usage")
-    }
+            BalanceView(appViewModel: appViewModel)
+                .frame(height: SettingsWindow.walletHeight)
+                .tabItem { Label("Wallet", systemImage: "wallet.pass") }
 
-    private var identityButton: some View {
-        Button {
-            guard appViewModel.selection != .identity else { return }
-            appViewModel.previousSelection = appViewModel.selection
-            appViewModel.selection = .identity
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "person.badge.key")
-                    .font(.system(size: AppFontSize.subheadline, weight: .medium))
-                Text("Identity")
-                    .font(.system(size: AppFontSize.body, weight: .semibold))
-                Spacer()
-            }
-            .foregroundColor(.primary)
-            .padding(.horizontal, 10)
-            .frame(height: 38)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(
-                        appViewModel.selection == .identity
-                            ? OOColor.hover
-                            : (hoveredIdentity ? OOColor.surface : Color.clear)
-                    )
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering in
-            hoveredIdentity = isHovering
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityLabel("Identity")
-        .help("View your Address and link devices")
-    }
+            LocalAgentsSettingsView(dockerRuntime: .shared, appViewModel: appViewModel)
+                .frame(height: SettingsWindow.localAgentsHeight)
+                .tabItem { Label("Local Agents", systemImage: "shippingbox") }
 
-    private var agentButton: some View {
-        Button {
-            guard appViewModel.selection != .chooseAgent else { return }
-            appViewModel.previousSelection = appViewModel.selection
-            appViewModel.selection = .chooseAgent
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "person")
-                    .font(.system(size: AppFontSize.subheadline, weight: .medium))
-                Text("Manage Agents")
-                    .font(.system(size: AppFontSize.body, weight: .semibold))
-                Spacer()
-            }
-            .foregroundColor(.primary)
-            .padding(.horizontal, 10)
-            .frame(height: 38)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(
-                        appViewModel.selection == .chooseAgent
-                            ? OOColor.hover
-                            : (hoveredAgent ? OOColor.surface : Color.clear)
-                    )
-            )
-            .contentShape(Rectangle())
+            UsageView(store: usageStore)
+                .frame(height: SettingsWindow.usageHeight)
+                .tabItem { Label("Usage", systemImage: "chart.bar.xaxis") }
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering in
-            hoveredAgent = isHovering
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityLabel("Agents")
-        .help("View and manage agents")
+        .frame(width: SettingsWindow.width)
+        .tint(OOColor.primary)
     }
 }
 
-/// Settings sub-page holding the Identity section, laid out like the Wallet and Usage pages.
-struct IdentityView: View {
-    @ObservedObject var appViewModel: AppViewModel
-    var identityStore: ConnectOnionIdentityStore = .shared
-    let onBack: () -> Void
+/// The Settings window's size. Grouped forms scroll and have no height of their own, so each tab
+/// names one; the window takes it, as the system's own Settings does per pane.
+enum SettingsWindow {
+    static let width: CGFloat = 700
+    static let generalHeight: CGFloat = 300
+    /// Tall enough for the device link sheet (560 pt), which opens over this tab.
+    static let identityHeight: CGFloat = 600
+    static let agentsHeight: CGFloat = 420
+    static let walletHeight: CGFloat = 500
+    static let localAgentsHeight: CGFloat = 320
+    static let usageHeight: CGFloat = 620
+}
+
+/// A tab whose content is taller than the window: it scrolls, on the app's background.
+struct SettingsScrollPage<Content: View>: View {
+    @ViewBuilder let content: Content
 
     var body: some View {
-        ZStack {
-            AppBackground()
+        ScrollView {
+            content
+                .padding(OOSpace.xLarge)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .background(AppBackground())
+    }
+}
 
-            GeometryReader { geometry in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        HStack(alignment: .top, spacing: 12) {
-                            Button(action: onBack) {
-                                Image(systemName: "arrow.left")
-                                    .font(.system(size: AppFontSize.subheadline, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 28, height: 28)
-                                    .background(AppPalette.surfaceMuted)
-                                    .clipShape(Circle())
-                                    .contentShape(Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Back")
-                            .help("Back")
+/// Appearance and the size of chat text.
+struct GeneralSettingsView: View {
+    @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
+    @AppStorage(ChatFontSize.storageKey) private var fontSize = ChatFontSize.standard
 
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("Settings")
-                                    .font(.system(size: AppFontSize.pageTitle, weight: .semibold))
-
-                                Text("Manage your Address and linked devices")
-                                    .font(.system(size: AppFontSize.body))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        IdentitySettingsView(
-                            identityStore: identityStore,
-                            handlers: appViewModel.deviceLinkHandlers
-                        )
+    var body: some View {
+        Form {
+            Section {
+                Picker("Appearance", selection: $appearanceMode) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
                     }
-                    .frame(maxWidth: 920, alignment: .leading)
-                    .padding(.horizontal, geometry.size.width < 760 ? 20 : 32)
-                    .padding(.top, 32)
-                    .padding(.bottom, 48)
-                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .pickerStyle(.segmented)
+            } footer: {
+                Text("Follow the system, or always use light or dark.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Slider(value: $fontSize, in: ChatFontSize.range, step: 1) {
+                    Text("Chat text size")
+                } minimumValueLabel: {
+                    Text("A")
+                        .font(.system(size: 11))
+                        .accessibilityHidden(true)
+                } maximumValueLabel: {
+                    Text("A")
+                        .font(.system(size: 17))
+                        .accessibilityHidden(true)
+                }
+                .accessibilityValue("\(Int(fontSize)) points")
+
+                Text("The quick brown fox replies in \(Int(fontSize)) pt.")
+                    .font(.system(size: fontSize))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } footer: {
+                HStack {
+                    Text("View \u{25B8} Bigger (\u{2318}=) and Smaller (\u{2318}\u{2212}) change it too.")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Reset") {
+                        fontSize = ChatFontSize.standard
+                    }
+                    .disabled(fontSize == ChatFontSize.standard)
+                }
             }
         }
-        .navigationTitle("Identity")
+        .formStyle(.grouped)
     }
 }
 
@@ -431,286 +286,133 @@ struct DeviceLinkSheet: View {
     }
 }
 
-/// Lets the user follow macOS appearance or force a light or dark theme.
-struct AppearanceSettingsView: View {
-    @Binding var appearanceMode: AppearanceMode
-
-    var body: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Appearance")
-                    .font(.system(size: AppFontSize.subheadline, weight: .semibold))
-
-                Text("Follow the system, or always use light or dark")
-                    .font(.system(size: AppFontSize.body))
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-
-            Picker("Appearance", selection: $appearanceMode) {
-                ForEach(AppearanceMode.allCases) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 220)
-        }
-        .padding(18)
-        .cardStyle(cornerRadius: 12)
-    }
-}
-
-/// Adds, edits, removes, and monitors address-based agent configurations.
-struct AgentControlPanel: View {
+/// Every saved agent: its name, address, how it's reached, and Rename, Refresh and Remove.
+/// Rename and Remove do what the agent pane's header does.
+struct AgentsSettingsView: View {
     @ObservedObject var appViewModel: AppViewModel
 
-    @State private var newAgentAddress = ""
-    @State private var inputError: String?
-    @State private var agentPendingDeletion: GeneralAgentConfiguration?
-
-    private var addressAgents: [GeneralAgentConfiguration] {
-        appViewModel.configurations.filter { configuration in
-            configuration.connectionType == .byAddress
-                && configuration.addressConfiguration != nil
-        }
-    }
-
-    private var trimmedNewAgentAddress: String {
-        newAgentAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var canAddAgent: Bool {
-        guard let normalizedTarget = ConnectOnionAgentTarget.normalized(
-            trimmedNewAgentAddress
-        ) else {
-            return false
-        }
-
-        return !addressAgents.contains { configuration in
-            guard let target = configuration.addressConfiguration?.agentAddress else {
-                return false
-            }
-            return ConnectOnionAgentTarget.normalized(target) == normalizedTarget
-        }
-    }
-
-    private var addressInputMessage: String? {
-        if let inputError {
-            return inputError
-        }
-        guard !trimmedNewAgentAddress.isEmpty else {
-            return nil
-        }
-        guard let normalizedTarget = ConnectOnionAgentTarget.normalized(
-            trimmedNewAgentAddress
-        ) else {
-            return "Enter a valid 0x address or HTTP(S) Direct URL."
-        }
-        let isDuplicate = addressAgents.contains { configuration in
-            guard let target = configuration.addressConfiguration?.agentAddress else {
-                return false
-            }
-            return ConnectOnionAgentTarget.normalized(target) == normalizedTarget
-        }
-        return isDuplicate ? "This agent is already connected." : nil
-    }
-
-    private var addButtonColor: Color {
-        if canAddAgent {
-            return AppPalette.primaryAction
-        } else {
-            return Color.secondary.opacity(0.35)
-        }
-    }
+    @State private var agentPendingRemoval: GeneralAgentConfiguration?
+    @State private var agentBeingRenamed: GeneralAgentConfiguration?
+    @State private var draftName = ""
 
     var body: some View {
-        VStack(spacing: 0) {
-            if addressAgents.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "server.rack")
-                        .font(.title2)
-                        .foregroundStyle(.secondary)
-
-                    Text("No agents yet")
-                        .font(.system(size: 16, weight: .semibold))
-
-                    Text("Paste a 0x address or HTTP(S) Direct URL below.")
-                        .font(.subheadline)
+        Form {
+            if appViewModel.configurations.isEmpty {
+                Section {
+                    Text("No agents yet. Use Add agent on the rail (\u{21E7}\u{2318}N) to connect one.")
                         .foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 24)
             } else {
-                VStack(spacing: 0) {
-                    ForEach(addressAgents) { configuration in
-                        agentRow(configuration)
-
-                        if configuration.id != addressAgents.last?.id {
-                            Divider()
-                                .padding(.leading, 98)
-                                .opacity(0.5)
-                        }
+                Section {
+                    ForEach(appViewModel.configurations) { configuration in
+                        AgentSettingsRow(
+                            configuration: configuration,
+                            snapshot: appViewModel.agentConnectionSnapshots[configuration.id],
+                            rename: {
+                                draftName = configuration.name
+                                agentBeingRenamed = configuration
+                            },
+                            refresh: {
+                                appViewModel.refreshAgentStatus(for: configuration)
+                            },
+                            remove: {
+                                agentPendingRemoval = configuration
+                            }
+                        )
                     }
+                } footer: {
+                    Text("Statuses refresh every 30 seconds while this tab is open.")
+                        .foregroundStyle(.secondary)
                 }
             }
-
-            Divider()
-                .opacity(0.5)
-
-            HStack(spacing: 16) {
-                Image(systemName: "plus")
-                    .font(.system(size: 20, weight: .light))
-                    .foregroundColor(.secondary.opacity(0.5))
-                    .frame(width: 32)
-
-                TextField(
-                    "0x address or https://…",
-                    text: $newAgentAddress
-                )
-                    .textFieldStyle(.plain)
-                    .accessibilityLabel("Agent address or Direct URL")
-                    .font(.system(size: 16, weight: .regular, design: .monospaced))
-                    .padding(.horizontal, 22)
-                    .frame(height: 36)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color.clear)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(AppPalette.divider, lineWidth: 1)
-                            )
-                    )
-
-                Button("Add") {
-                    addAgent()
-                }
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(AppPalette.primaryActionForeground)
-                .frame(width: 86, height: 36)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(addButtonColor)
-                )
-                .buttonStyle(.plain)
-                .disabled(!canAddAgent)
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
-
-            if let addressInputMessage {
-                Text(addressInputMessage)
-                    .font(.caption)
-                    .foregroundStyle(AppPalette.error)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 88)
-                    .padding(.bottom, 14)
-            }
         }
-        .cardStyle(cornerRadius: 12)
-        .onChange(of: newAgentAddress) {
-            inputError = nil
-        }
+        .formStyle(.grouped)
         .task {
             appViewModel.refreshAgentStatuses(trigger: .poll)
-
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                try? await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { return }
                 appViewModel.refreshAgentStatuses(trigger: .poll)
             }
         }
+        .removeAgentConfirmation($agentPendingRemoval, appViewModel: appViewModel)
         .alert(
-            "Remove agent?",
+            "Rename agent",
             isPresented: Binding(
-                get: { agentPendingDeletion != nil },
+                get: { agentBeingRenamed != nil },
                 set: { isPresented in
                     if !isPresented {
-                        agentPendingDeletion = nil
+                        agentBeingRenamed = nil
                     }
                 }
             ),
-            presenting: agentPendingDeletion
+            presenting: agentBeingRenamed
         ) { configuration in
+            TextField("Agent name", text: $draftName)
+            Button("Rename") {
+                appViewModel.renameAgent(configuration, to: draftName)
+                agentBeingRenamed = nil
+            }
+            .keyboardShortcut(.defaultAction)
             Button("Cancel", role: .cancel) {
-                agentPendingDeletion = nil
+                agentBeingRenamed = nil
             }
-            Button("Remove", role: .destructive) {
-                appViewModel.deleteConfiguration(configuration)
-                agentPendingDeletion = nil
-            }
-        } message: { configuration in
-            Text("Removing \(configuration.name) also deletes its chats and messages.")
         }
     }
+}
 
-    private func agentRow(_ configuration: GeneralAgentConfiguration) -> some View {
-        let address = configuration.addressConfiguration?.agentAddress ?? ""
-        let snapshot = appViewModel.agentConnectionSnapshots[configuration.id]
+/// One agent in the Agents tab.
+struct AgentSettingsRow: View {
+    let configuration: GeneralAgentConfiguration
+    let snapshot: AgentConnectionSnapshot?
+    let rename: () -> Void
+    let refresh: () -> Void
+    let remove: () -> Void
 
-        return HStack(alignment: .top, spacing: 24) {
-            OOAvatarTile(
-                name: configuration.name,
-                address: address,
-                size: .large
-            )
-            .overlay(alignment: .bottomTrailing) {
-                Circle()
-                    .fill(statusColor(for: snapshot))
-                    .frame(width: 10, height: 10)
-                    .overlay {
-                        Circle()
-                            .stroke(AppPalette.surface, lineWidth: 2)
-                    }
-            }
+    @State private var didCopy = false
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
+    private var address: String? {
+        configuration.addressConfiguration?.agentAddress
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
                     Text(configuration.name)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.primary)
+                        .font(.body.weight(.semibold))
                         .lineLimit(1)
-
-                    Text(statusLabel(for: snapshot))
-                        .font(.system(size: AppFontSize.footnote, weight: .semibold))
-                        .foregroundStyle(
-                            snapshot?.state == .invalid ? AppPalette.warningText : statusColor(for: snapshot)
-                        )
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(statusColor(for: snapshot).opacity(0.1))
-                        )
-                }
-
-                HStack(spacing: 10) {
-                    Text(address)
-                        .font(.system(size: AppFontSize.subheadline, weight: .regular, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(address, forType: .string)
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: AppFontSize.body, weight: .medium))
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(Self.statusColor(for: snapshot))
+                            .frame(width: 7, height: 7)
+                            .accessibilityHidden(true)
+                        Text(Self.statusLabel(for: snapshot))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(OOColor.inkSecondary)
-                    .accessibilityLabel("Copy agent address")
-                    .help("Copy agent address")
                 }
 
-                capabilitySummary(for: snapshot)
+                if let address, !address.isEmpty {
+                    HStack(spacing: 6) {
+                        Text(address)
+                            .font(AppTypography.mono(size: AppFontSize.caption))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                        Button(didCopy ? "Copied" : "Copy") {
+                            copy(address)
+                        }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                        .frame(minWidth: macMinimumTarget, minHeight: macMinimumTarget)
+                        .contentShape(Rectangle())
+                        .accessibilityLabel(didCopy ? "Address copied" : "Copy \(configuration.name)'s address")
+                    }
+                }
 
-                if let detail = snapshot?.detail,
-                   snapshot?.state == .offline || snapshot?.state == .invalid {
+                if let detail = snapshot?.detail, snapshot?.state == .offline || snapshot?.state == .invalid {
                     Text(detail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -718,78 +420,44 @@ struct AgentControlPanel: View {
                 }
             }
 
-            Spacer(minLength: 16)
+            Spacer(minLength: 12)
 
-            agentActionButtons(for: configuration)
-        }
-        .padding(.horizontal, 34)
-        .padding(.vertical, 24)
-    }
+            Button("Rename", action: rename)
+                .accessibilityLabel("Rename \(configuration.name)")
 
-    @ViewBuilder
-    private func agentActionButtons(
-        for configuration: GeneralAgentConfiguration
-    ) -> some View {
-        Button {
-            appViewModel.refreshAgentStatus(for: configuration)
-        } label: {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: AppFontSize.subheadline, weight: .semibold))
-        }
-        .buttonStyle(.plain)
-        .foregroundColor(OOColor.inkSecondary)
-        .accessibilityLabel("Refresh agent status")
-        .help("Refresh status")
-
-        Button {
-            agentPendingDeletion = configuration
-        } label: {
-            Image(systemName: "trash")
-                .font(.system(size: 15, weight: .semibold))
-        }
-        .buttonStyle(.plain)
-        .foregroundColor(OOColor.inkSecondary)
-        .accessibilityLabel("Remove agent")
-        .help("Remove agent")
-    }
-
-    @ViewBuilder
-    private func capabilitySummary(for snapshot: AgentConnectionSnapshot?) -> some View {
-        let tools = snapshot?.tools ?? []
-
-        if !tools.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Array(tools.prefix(5)), id: \.self) { tool in
-                        Text(tool)
-                            .font(.system(size: AppFontSize.caption, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(
-                                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .fill(Color.secondary.opacity(0.07))
-                            )
-                    }
-
-                    if tools.count > 5 {
-                        Text("+\(tools.count - 5) more")
-                            .font(.system(size: AppFontSize.caption, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            Button(action: refresh) {
+                Image(systemName: "arrow.clockwise")
             }
-        } else if snapshot?.state == .online && snapshot?.route == .relay {
-            Text("Capabilities unavailable through relay")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            .help("Refresh status")
+            .accessibilityLabel("Refresh \(configuration.name)'s status")
+
+            Menu {
+                Button("Remove agent\u{2026}", role: .destructive, action: remove)
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More")
+            .accessibilityLabel("More for \(configuration.name)")
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func copy(_ address: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(address, forType: .string)
+        didCopy = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            didCopy = false
         }
     }
 
-    private func statusLabel(for snapshot: AgentConnectionSnapshot?) -> String {
+    static func statusLabel(for snapshot: AgentConnectionSnapshot?) -> String {
         switch snapshot?.state {
         case .online:
-            return snapshot?.route == .direct ? "Online · Direct" : "Online · Relay"
+            return snapshot?.route == .direct ? "Online \u{00B7} Direct" : "Online \u{00B7} Relay"
         case .offline:
             return "Offline"
         case .invalid:
@@ -799,32 +467,128 @@ struct AgentControlPanel: View {
         }
     }
 
-    private func statusColor(for snapshot: AgentConnectionSnapshot?) -> Color {
+    static func statusColor(for snapshot: AgentConnectionSnapshot?) -> Color {
         switch snapshot?.state {
         case .online:
-            return AppPalette.success
+            return OOColor.live
         case .invalid:
-            return AppPalette.warning
+            return OOColor.decisionMark
         case .offline:
-            return AppPalette.error
+            return OOColor.failureText
         case .checking, .none:
             return .secondary
         }
     }
+}
 
-    private func addAgent() {
-        switch appViewModel.addAgent(trimmedNewAgentAddress) {
-        case .added:
-            newAgentAddress = ""
-            inputError = nil
-        case .duplicate:
-            inputError = "This agent is already connected."
-        case .invalid:
-            inputError = "Enter a valid 0x address or HTTP(S) Direct URL."
+/// Docker on this Mac: whether it runs agents here, and the runtime .env they read.
+struct LocalAgentsSettingsView: View {
+    @ObservedObject var dockerRuntime: DockerRuntimeManager
+    @ObservedObject var appViewModel: AppViewModel
+    /// nil until the toggle is used; until then local agents on this Mac decide, as in the Docker menu.
+    @AppStorage(LocalAgentsSetting.storageKey) private var runsLocalAgents: Bool?
+    /// This window's own: the Docker menu's restart asks in the chat window instead.
+    @State private var isConfirmingRestart = false
+
+    private var isOn: Binding<Bool> {
+        LocalAgentsSetting.binding(runsLocalAgents, runtime: dockerRuntime)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle(isOn: isOn) {
+                    Text("Run agents on this Mac")
+                    Text("Starts Docker when you first open a chat, and stops it when oo-chat quits.")
+                }
+                .toggleStyle(.switch)
+            }
+
+            Section {
+                LabeledContent("Runtime .env") {
+                    Text(dockerRuntime.configurationFilePath)
+                        .font(AppTypography.mono(size: AppFontSize.footnote))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+
+                HStack(spacing: 8) {
+                    Button("Reveal in Finder") {
+                        dockerRuntime.revealConfigurationFile()
+                    }
+                    Button("Copy Path") {
+                        dockerRuntime.copyConfigurationPath()
+                    }
+                    Spacer()
+                    if dockerRuntime.status.isBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Button("Apply and Restart\u{2026}") {
+                        isConfirmingRestart = true
+                    }
+                    .disabled(dockerRuntime.status.isBusy || !isOn.wrappedValue)
+                }
+
+                if let message = dockerRuntime.configurationActionMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(dockerRuntime.status.isError ? OOColor.failureText : .secondary)
+                }
+            } header: {
+                Text("Docker configuration")
+            } footer: {
+                Text("Add provider API keys to the runtime .env, then apply it to restart every local agent.")
+                    .foregroundStyle(.secondary)
+            }
         }
+        .formStyle(.grouped)
+        .restartAgentsConfirmation(
+            isPresented: $isConfirmingRestart,
+            dockerRuntime: dockerRuntime,
+            appViewModel: appViewModel
+        )
     }
 }
 
-#Preview {
-    ContentView()
+/// What the restart prompt says: how many agents, and whether a reply is running right now.
+enum RestartAgentsWording {
+    static func title(agentCount: Int) -> String {
+        switch agentCount {
+        case 0: return "Restart local agents?"
+        case 1: return "Restart 1 agent?"
+        default: return "Restart \(agentCount) agents?"
+        }
+    }
+
+    static func message(isRunActive: Bool) -> String {
+        isRunActive
+            ? "A reply is running right now and will stop, along with any other running chats."
+            : "Running chats will stop."
+    }
+}
+
+extension View {
+    /// "Restart 2 agents?", from the Docker menu or the Local Agents tab.
+    func restartAgentsConfirmation(
+        isPresented: Binding<Bool>,
+        dockerRuntime: DockerRuntimeManager,
+        appViewModel: AppViewModel
+    ) -> some View {
+        alert(
+            RestartAgentsWording.title(agentCount: appViewModel.configurations.filter(\.isOnThisMac).count),
+            isPresented: isPresented
+        ) {
+            Button("Cancel", role: .cancel) {}
+                .keyboardShortcut(.defaultAction)
+            Button("Restart", role: .destructive) {
+                Task {
+                    await dockerRuntime.applyConfigurationAndRestart()
+                }
+            }
+        } message: {
+            Text(RestartAgentsWording.message(isRunActive: appViewModel.liveActivity.values.contains(.working)))
+        }
+    }
 }

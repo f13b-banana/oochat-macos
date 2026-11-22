@@ -28,7 +28,7 @@ final class ConnectOnionServiceConnectionTests: XCTestCase {
         XCTAssertFalse(service.isConnected)
         XCTAssertEqual(
             service.connectionError,
-            "Direct API configurations are no longer supported. Connect to a hosted ConnectOnion agent instead."
+            "Direct API configurations are no longer supported. Connect to a hosted agent instead."
         )
         XCTAssertEqual(service.hostedAgentStatus, "Not Connected")
         XCTAssertNil(service.hostedAgentStatusDetail)

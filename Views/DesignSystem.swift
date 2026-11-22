@@ -33,6 +33,18 @@ enum AppPalette {
     static let primaryActionForeground = OOColor.onPrimary
 }
 
+/// The smallest click target on the Mac: a pointer is finer than a finger, so this sits under the
+/// kit's 44 pt `ooMinimumTarget`, which is sized for touch.
+let macMinimumTarget: CGFloat = 28
+
+/// `withAnimation` that respects Reduce Motion: with it on, the change happens at once. For code
+/// outside a view (menu commands, scroll proxies) where the environment value isn't to hand.
+@MainActor
+@discardableResult
+func withMotion<Result>(_ animation: Animation? = .default, _ body: () throws -> Result) rethrows -> Result {
+    try withAnimation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : animation, body)
+}
+
 /// Shared type scale. Values match the sizes previously hardcoded across
 /// the views, so adopting the tokens is purely mechanical and does not
 /// change rendering.

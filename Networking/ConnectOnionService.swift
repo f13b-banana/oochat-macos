@@ -141,7 +141,7 @@ final class ConnectOnionService: ObservableObject {
 
         case .legacyByApi:
             setConnectionFailure(
-                "Direct API configurations are no longer supported. Connect to a hosted ConnectOnion agent instead."
+                "Direct API configurations are no longer supported. Connect to a hosted agent instead."
             )
         }
 
@@ -157,7 +157,7 @@ final class ConnectOnionService: ObservableObject {
         let target = configuration.agentAddress.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let normalizedTarget = ConnectOnionAgentTarget.normalized(target) else {
             setConnectionFailure(
-                "Enter a valid ConnectOnion 0x address or HTTP(S) Direct URL"
+                "Enter a valid 0x address or HTTP(S) Direct URL"
             )
             return
         }
@@ -197,7 +197,7 @@ final class ConnectOnionService: ObservableObject {
                 self.hostedAgentStatus = "Connected"
                 self.hostedAgentStatusDetail = endpoint.isDirect
                     ? "Direct endpoint"
-                    : "ConnectOnion relay"
+                    : "Relay"
                 self.isHostedAgentStatusLive = true
                 self.hostedFilesystemEnabled = endpoint.info?.tools?.contains(where: {
                     ["read_file", "glob", "grep", "write", "edit", "multi_edit"].contains($0)
@@ -308,7 +308,7 @@ final class ConnectOnionService: ObservableObject {
     ) async {
         guard configuration.connectionType == .byAddress else {
             let message =
-                "Direct API configurations are no longer supported. Connect to a hosted ConnectOnion agent instead."
+                "Direct API configurations are no longer supported. Connect to a hosted agent instead."
             setConnectionFailure(message)
             incomingEvents.send(.error(message))
             return

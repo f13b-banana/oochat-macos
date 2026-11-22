@@ -130,7 +130,7 @@ final class ConnectOnionRemoteAgentTests: XCTestCase {
         XCTAssertTrue((cancellation["message"] as? String)?.contains("cancelled") == true)
 
         XCTAssertEqual(
-            ConnectOnionULWCheckpointDecision.continueTenTurns.message["turns"] as? Int,
+            ConnectOnionULWCheckpointDecision.continueTurns.message["turns"] as? Int,
             AgentExecutionMode.acceptTurns
         )
         XCTAssertEqual(
@@ -281,22 +281,22 @@ final class ConnectOnionRemoteAgentTests: XCTestCase {
         let cases: [ErrorExpectation] = [
             .init(
                 error: .invalidAgentTarget,
-                description: "Enter a valid ConnectOnion 0x address or HTTP(S) Direct URL",
+                description: "Enter a valid 0x address or HTTP(S) Direct URL",
                 isRetryable: false
             ),
             .init(
                 error: .agentNotFound,
-                description: "The ConnectOnion relay could not find this agent",
+                description: "The relay could not find this agent",
                 isRetryable: false
             ),
             .init(
                 error: .agentOffline,
-                description: "The ConnectOnion agent is offline",
+                description: "The agent is offline",
                 isRetryable: false
             ),
             .init(
                 error: .invalidRelayResponse,
-                description: "The ConnectOnion relay returned an invalid response",
+                description: "The relay returned an invalid response",
                 isRetryable: false
             ),
             .init(
@@ -306,7 +306,7 @@ final class ConnectOnionRemoteAgentTests: XCTestCase {
             ),
             .init(
                 error: .invalidAgentInfo,
-                description: "The agent endpoint did not return a matching ConnectOnion address",
+                description: "The agent endpoint did not return a matching agent address",
                 isRetryable: false
             ),
             .init(

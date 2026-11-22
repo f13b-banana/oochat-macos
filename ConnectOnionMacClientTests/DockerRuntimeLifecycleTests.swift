@@ -4,70 +4,40 @@ import XCTest
 @testable import ConnectOnionMacClient
 
 final class DockerRuntimeLifecycleTests: XCTestCase {
+    // Docker is never started at launch (the first chat starts it); quitting stops it when local agents are on.
     @MainActor
-    func testAppDelegateOwnsDockerLifecycleOnlyOutsideTests() async {
-        var startCount = 0
+    func testAppDelegateStopsDockerOnQuitOnlyOutsideTests() {
         var stopCount = 0
-        let launchNotification = Notification(
-            name: NSApplication.didFinishLaunchingNotification
-        )
-        let terminateNotification = Notification(
-            name: NSApplication.willTerminateNotification
-        )
+        let terminateNotification = Notification(name: NSApplication.willTerminateNotification)
 
-        let testDelegate = AppDelegate(
-            isRunningTests: { true },
-            startDockerRuntime: {
-                startCount += 1
-            },
-            stopDockerRuntime: {
-                stopCount += 1
-            }
-        )
-        testDelegate.applicationDidFinishLaunching(launchNotification)
-        await Task.yield()
+        let testDelegate = AppDelegate(isRunningTests: { true }, stopDockerRuntime: { stopCount += 1 })
         testDelegate.applicationWillTerminate(terminateNotification)
-
-        XCTAssertEqual(startCount, 0)
         XCTAssertEqual(stopCount, 0)
-        XCTAssertTrue(
-            testDelegate.applicationShouldTerminateAfterLastWindowClosed(.shared)
-        )
+        XCTAssertTrue(testDelegate.applicationShouldTerminateAfterLastWindowClosed(.shared))
 
         let appDelegate = AppDelegate(
             isRunningTests: { false },
             runsLocalAgents: { true },
-            startDockerRuntime: {
-                startCount += 1
-            },
-            stopDockerRuntime: {
-                stopCount += 1
-            }
+            stopDockerRuntime: { stopCount += 1 }
         )
-        appDelegate.applicationDidFinishLaunching(launchNotification)
-        await Task.yield()
         appDelegate.applicationWillTerminate(terminateNotification)
-
-        XCTAssertEqual(startCount, 1)
         XCTAssertEqual(stopCount, 1)
 
-        // A Mac that only talks to remote agents never starts or stops Docker.
+        // A Mac that only talks to remote agents never stops Docker.
         let remoteOnlyDelegate = AppDelegate(
             isRunningTests: { false },
             runsLocalAgents: { false },
-            startDockerRuntime: {
-                startCount += 1
-            },
-            stopDockerRuntime: {
-                stopCount += 1
-            }
+            stopDockerRuntime: { stopCount += 1 }
         )
-        remoteOnlyDelegate.applicationDidFinishLaunching(launchNotification)
-        await Task.yield()
         remoteOnlyDelegate.applicationWillTerminate(terminateNotification)
-
-        XCTAssertEqual(startCount, 1)
         XCTAssertEqual(stopCount, 1)
+    }
+
+    func testRestartPromptNamesTheAgentsAndARunningReply() {
+        XCTAssertEqual(RestartAgentsWording.title(agentCount: 2), "Restart 2 agents?")
+        XCTAssertEqual(RestartAgentsWording.title(agentCount: 1), "Restart 1 agent?")
+        XCTAssertEqual(RestartAgentsWording.message(isRunActive: false), "Running chats will stop.")
+        XCTAssertTrue(RestartAgentsWording.message(isRunActive: true).hasPrefix("A reply is running right now"))
     }
 
     // A local agent added by its 0x address looks remote, so a runtime that has run before also counts.

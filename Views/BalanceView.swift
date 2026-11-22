@@ -22,17 +22,10 @@ struct BalanceView: View {
     @State private var copiedTarget: CopyTarget?
     @State private var copyFeedbackToken = UUID()
 
-    let onBack: () -> Void
-
     /// `viewModel` is for tests and previews; the app lets the view make its own.
-    init(
-        appViewModel: AppViewModel,
-        viewModel: BalanceViewModel? = nil,
-        onBack: @escaping () -> Void
-    ) {
+    init(appViewModel: AppViewModel, viewModel: BalanceViewModel? = nil) {
         self.appViewModel = appViewModel
         _viewModel = StateObject(wrappedValue: viewModel ?? BalanceViewModel())
-        self.onBack = onBack
     }
 
     /// Wallet amounts are presented consistently as dollar-and-cents values.
@@ -50,66 +43,16 @@ struct BalanceView: View {
     }
 
     var body: some View {
-        ZStack {
-            AppBackground()
-
-            GeometryReader { geometry in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        HStack(alignment: .top, spacing: 12) {
-                            Button(action: onBack) {
-                                Image(systemName: "arrow.left")
-                                    .font(.system(size: AppFontSize.subheadline, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 28, height: 28)
-                                    .background(AppPalette.surfaceMuted)
-                                    .clipShape(Circle())
-                                    .contentShape(Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Back")
-                            .help("Back")
-
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("Settings")
-                                    .font(.system(size: AppFontSize.pageTitle, weight: .semibold))
-
-                                Text("Manage your ConnectOnion docker credentials, and credits")
-                                    .font(.system(size: AppFontSize.body))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        balanceBody
-                        DockerConfigurationView(
-                            dockerRuntime: DockerRuntimeManager.shared
-                        )
-
-                    }
-                    .frame(maxWidth: 920, alignment: .leading)
-                    .padding(.horizontal, geometry.size.width < 760 ? 20 : 32)
-                    .padding(.top, 32)
-                    .padding(.bottom, 48)
-                    .frame(maxWidth: .infinity)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
+        SettingsScrollPage {
+            balanceBody
         }
-        .navigationTitle("Balance")
     }
 
+    // Stacked, so the twelve-word recovery phrase gets the full width.
     private var balanceBody: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 24) {
-                balanceCard
-                walletCard
-                    .frame(minWidth: 300)
-            }
-
-            VStack(alignment: .leading, spacing: 24) {
-                balanceCard
-                walletCard
-            }
+        VStack(alignment: .leading, spacing: 20) {
+            balanceCard
+            walletCard
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(.easeInOut(duration: 0.2), value: viewModel.isShowingRecoverySeed)
@@ -121,7 +64,7 @@ struct BalanceView: View {
             await credentials
         }
         .alert(
-            "Recovery Phrase Unavailable",
+            "Recovery phrase unavailable",
             isPresented: Binding(
                 get: { viewModel.recoverySeedError != nil },
                 set: { isPresented in
@@ -139,54 +82,33 @@ struct BalanceView: View {
         }
     }
 
+    /// A plain card like the wallet's, so it sits on the page in light and dark alike.
     private var balanceCard: some View {
-        RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .fill(
-                Color(red: 0.090, green: 0.090, blue: 0.090)
-            )
-            .frame(width: 320, height: 300)
-            .shadow(color: .black.opacity(0.2), radius: 16, x: 0, y: 8)
-            .overlay {
-                // Hairline edge so the card stays visible on the dark-mode
-                // background, which shares the same near-black fill.
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
-            }
-            .overlay {
-                VStack(alignment: .leading, spacing: 20) {
-                    HStack {
-                        Label("BALANCE", systemImage: "creditcard.fill")
-                            .font(.system(size: AppFontSize.caption, weight: .semibold))
-                            .tracking(1.6)
-                            .foregroundStyle(.white.opacity(0.65))
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("Balance", systemImage: "creditcard")
+                    .font(.headline)
 
-                        Spacer()
+                Spacer()
 
-                        Button(action: refreshBalance) {
-                            Image(systemName: "arrow.clockwise")
-                                .foregroundStyle(.white.opacity(0.65))
-                                .frame(width: 28, height: 28)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isLoading)
-                        .opacity(refreshButtonOpacity)
-                        .accessibilityLabel("Refresh balance")
-                        .help("Refresh balance")
-                    }
-
-                    balanceContent
+                Button(action: refreshBalance) {
+                    Image(systemName: "arrow.clockwise")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
-                .padding(28)
+                .buttonStyle(.plain)
+                .disabled(isLoading)
+                .opacity(isLoading ? 0.45 : 1)
+                .accessibilityLabel("Refresh balance")
+                .help("Refresh balance")
             }
-    }
 
-    private var refreshButtonOpacity: Double {
-        if isLoading {
-            return 0.45
-        } else {
-            return 1
+            balanceContent
         }
+        .padding(OOSpace.xLarge)
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+        .background(CardBackground(cornerRadius: OORadius.card))
     }
 
     @ViewBuilder
@@ -196,97 +118,78 @@ struct BalanceView: View {
             EmptyView()
 
         case .loading:
-            VStack(spacing: 6) {
+            HStack(spacing: 8) {
                 ProgressView()
-                    .tint(.white)
-                    .scaleEffect(0.7)
-
-                Text("Loading…")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.65))
+                    .controlSize(.small)
+                Text("Loading\u{2026}")
+                    .font(.system(size: AppFontSize.body))
+                    .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded(let amount):
-            VStack(alignment: .leading, spacing: 0) {
-                Text("$\(Self.formattedBalance(amount))")
-                    .font(.system(size: 38, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("$\(Self.formattedBalance(amount))")
+                        .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
 
-                Text("AVAILABLE CREDITS")
-                    .font(.system(size: AppFontSize.footnote, weight: .semibold))
-                    .tracking(1.2)
-                    .foregroundStyle(.white.opacity(0.65))
-                    .padding(.top, 6)
+                    Text("Available credits")
+                        .font(.system(size: AppFontSize.footnote))
+                        .foregroundStyle(.secondary)
+                }
 
                 Spacer()
 
-                Divider()
-                    .overlay(.white.opacity(0.16))
-                    .padding(.bottom, 18)
-
                 Button(action: addBalance) {
-                    Label("Add Balance", systemImage: "plus")
-                        .font(.system(size: AppFontSize.subheadline, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 38)
-                        .foregroundStyle(Color.black.opacity(0.88))
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    Label("Add balance", systemImage: "plus")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Add balance")
-                .help("Purchase ConnectOnion credits")
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .help("Buy credits")
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
         case .error(let message):
-            VStack(spacing: 6) {
-                Image(systemName: "exclamationmark.circle")
-                    .foregroundColor(.red)
-
-                Text(message)
-                    .font(.caption2)
-                    .foregroundColor(.red.opacity(0.9))
-                    .multilineTextAlignment(.center)
-
-                Button("Retry", action: refreshBalance)
-                    .font(.caption)
-            }
-            .padding(8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            inlineError(message, retry: refreshBalance)
         }
     }
 
-    private var walletCard: some View {
-        RoundedRectangle(cornerRadius: 18)
-            .fill(AppPalette.surface)
-            .frame(maxWidth: .infinity, minHeight: 300)
-            .overlay(alignment: .topLeading) {
-                Group {
-                    if viewModel.isShowingRecoverySeed {
-                        recoveryPhraseContent
-                            .transition(.opacity)
-                    } else {
-                        walletContent
-                            .transition(.opacity)
-                    }
-                }
+    /// One line for a failure: what went wrong, and Retry.
+    private func inlineError(_ message: String, retry: @escaping () -> Void) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(OOColor.failureText)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(.system(size: AppFontSize.body))
                 .foregroundStyle(.primary)
-                .padding(28)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button("Retry", action: retry)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var walletCard: some View {
+        Group {
+            if viewModel.isShowingRecoverySeed {
+                recoveryPhraseContent
+                    .transition(.opacity)
+            } else {
+                walletContent
+                    .transition(.opacity)
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
-            }
+        }
+        .foregroundStyle(.primary)
+        .padding(OOSpace.xLarge)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(CardBackground(cornerRadius: OORadius.card))
     }
 
     private var walletContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Label("Wallet & API", systemImage: "key.horizontal.fill")
+                Label("Wallet", systemImage: "wallet.pass")
                     .font(.headline)
 
                 Spacer()
@@ -321,23 +224,15 @@ struct BalanceView: View {
                 isSensitive: true
             )
 
-            Button(action: backupSeed) {
-                Label("Backup Seed", systemImage: "shield.checkered")
-                    .font(.system(size: AppFontSize.caption, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 14)
-                    .frame(height: 32)
-                    .background(Color.secondary.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
-                    }
+            if let credentialsError = viewModel.credentialsError {
+                inlineError(credentialsError, retry: viewModel.refreshCredentials)
             }
-            .buttonStyle(.plain)
-            .padding(.top, 12)
-            .accessibilityLabel("Backup seed")
-            .help("Backup seed")
+
+            Button(action: viewModel.showRecoverySeed) {
+                Label("Show recovery phrase", systemImage: "shield.checkered")
+            }
+            .padding(.top, 4)
+            .help("Show the twelve words that restore this wallet")
         }
     }
 
@@ -345,7 +240,7 @@ struct BalanceView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("Recovery Phrase", systemImage: "shield.checkered")
+                    Label("Recovery phrase", systemImage: "shield.checkered")
                         .font(.headline)
 
                     Text("Store this phrase offline. It cannot be recovered if lost.")
@@ -415,7 +310,7 @@ struct BalanceView: View {
                     if copiedTarget == .recoveryPhrase {
                         Label(SecretPasteboard.copiedMessage, systemImage: "checkmark.circle.fill")
                             .font(.system(size: AppFontSize.body, weight: .semibold))
-                            .foregroundStyle(AppPalette.success)
+                            .foregroundStyle(OOColor.live)
                             .frame(maxWidth: .infinity)
                             .frame(height: 36)
                     } else {
@@ -434,8 +329,8 @@ struct BalanceView: View {
                         .font(.system(size: AppFontSize.body, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .frame(height: 36)
-                        .foregroundStyle(AppPalette.primaryActionForeground)
-                        .background(AppPalette.primaryAction)
+                        .foregroundStyle(OOColor.onPrimary)
+                        .background(OOColor.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .contentShape(Rectangle())
                 }
@@ -511,7 +406,7 @@ struct BalanceView: View {
                     if isCopied {
                         Label(copiedMessage, systemImage: "checkmark.circle.fill")
                             .font(.system(size: AppFontSize.footnote, weight: .semibold))
-                            .foregroundStyle(AppPalette.success)
+                            .foregroundStyle(OOColor.live)
                             .fixedSize()
                             .frame(height: 28)
                     } else {
@@ -545,8 +440,8 @@ struct BalanceView: View {
             return "Fetching…"
         }
 
-        if let credentialsError = viewModel.credentialsError {
-            return credentialsError
+        if viewModel.credentialsError != nil {
+            return "Unavailable"
         }
 
         return viewModel.credentials?.publicKey ?? "Not connected"
@@ -557,15 +452,11 @@ struct BalanceView: View {
             return "Fetching…"
         }
 
-        if let credentialsError = viewModel.credentialsError {
-            return credentialsError
+        if viewModel.credentialsError != nil {
+            return "Unavailable"
         }
 
         return viewModel.credentials?.jwt ?? "Not configured"
-    }
-
-    private func backupSeed() {
-        viewModel.showRecoverySeed()
     }
 
     private func addBalance() {
@@ -600,102 +491,5 @@ struct BalanceView: View {
             return true
         }
         return false
-    }
-}
-
-/// Exposes the runtime `.env` and restarts Docker-managed agents after edits.
-struct DockerConfigurationView: View {
-    @ObservedObject var dockerRuntime: DockerRuntimeManager
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Docker configuration")
-                        .font(.system(size: AppFontSize.subheadline, weight: .semibold))
-
-                    Text(
-                        "Add provider API keys to the runtime .env, "
-                            + "then apply the configuration to restart every Agent."
-                    )
-                    .font(.system(size: AppFontSize.body))
-                    .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                if dockerRuntime.status.isBusy {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-            }
-
-            Text(dockerRuntime.configurationFilePath)
-                .font(AppTypography.mono(size: AppFontSize.footnote))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-
-            HStack(spacing: 10) {
-                Button("Reveal .env") {
-                    dockerRuntime.revealConfigurationFile()
-                }
-                .buttonStyle(.bordered)
-
-                Button("Copy Path") {
-                    dockerRuntime.copyConfigurationPath()
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
-
-                Button("Apply & Restart") {
-                    dockerRuntime.isConfirmingRestart = true
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(dockerRuntime.status.isBusy)
-            }
-
-            if let message = dockerRuntime.configurationActionMessage {
-                Text(message)
-                    .font(.system(size: AppFontSize.footnote))
-                    .foregroundStyle(
-                        dockerRuntime.status.isError ? AppPalette.error : .secondary
-                    )
-            }
-        }
-        .padding(18)
-        .cardStyle(cornerRadius: 12)
-    }
-}
-
-/// Copies a secret so clipboard managers skip it, then clears it after a delay.
-enum SecretPasteboard {
-    /// The nspasteboard.org marker that clipboard managers and history tools skip.
-    static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
-    static let copiedMessage = "Copied · clears in 60 s"
-
-    @discardableResult
-    static func copy(
-        _ secret: String,
-        to pasteboard: NSPasteboard = .general,
-        clearAfter delay: Duration = .seconds(60)
-    ) -> Bool {
-        pasteboard.clearContents()
-        guard pasteboard.setString(secret, forType: .string) else { return false }
-        pasteboard.setData(Data(), forType: concealedType)
-        let changeCount = pasteboard.changeCount
-        Task {
-            try? await Task.sleep(for: delay)
-            clearIfUnchanged(pasteboard, since: changeCount)
-        }
-        return true
-    }
-
-    /// Clears the pasteboard only if nothing else was copied since the secret.
-    static func clearIfUnchanged(_ pasteboard: NSPasteboard, since changeCount: Int) {
-        guard pasteboard.changeCount == changeCount else { return }
-        pasteboard.clearContents()
     }
 }

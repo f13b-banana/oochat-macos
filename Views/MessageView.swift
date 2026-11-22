@@ -156,6 +156,18 @@ struct MessageView: View {
         .frame(width: conversationWidth)
         .frame(maxWidth: .infinity, alignment: .center)
         .onHover(perform: updateHover)
+        // The hover actions again, for the keyboard-free right-click and VoiceOver's actions menu.
+        .contextMenu {
+            Button("Copy", action: copyMessage)
+            if message.role == .user && canEdit {
+                Button("Edit\u{2026}") {
+                    editDraft = message.content
+                }
+            }
+            if message.role == .agent && canRetry {
+                Button("Retry", action: onRetry)
+            }
+        }
     }
 
     /// Hover-revealed action row, reserved at a fixed height so messages

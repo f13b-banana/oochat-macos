@@ -245,11 +245,11 @@ final class WalletServiceTests: XCTestCase {
         )
         XCTAssertEqual(
             ConnectOnionTranscriptionError.transcriptionFailed("").localizedDescription,
-            "ConnectOnion could not transcribe the recording."
+            "oo-chat could not transcribe the recording."
         )
         XCTAssertEqual(
             ConnectOnionTranscriptionError.transcriptionFailed("network").localizedDescription,
-            "ConnectOnion transcription failed: network"
+            "oo-chat transcription failed: network"
         )
         XCTAssertTrue(
             ConnectOnionTranscriptionError.invalidResponse.localizedDescription
@@ -308,7 +308,7 @@ final class WalletServiceTests: XCTestCase {
         } catch let error as ConnectOnionTranscriptionError {
             XCTAssertEqual(
                 error.localizedDescription,
-                "ConnectOnion transcription failed: OpenOnion API key required"
+                "oo-chat transcription failed: OpenOnion API key required"
             )
         } catch {
             XCTFail("Unexpected error: \(error)")
@@ -412,7 +412,7 @@ final class WalletServiceTests: XCTestCase {
         await waitUntil { emptyService.isRecording }
         emptyService.stopRecording()
         await waitUntil {
-            emptyService.errorMessage == "ConnectOnion did not detect any speech."
+            emptyService.errorMessage == "oo-chat did not detect any speech."
                 && !emptyService.isTranscribing
         }
 

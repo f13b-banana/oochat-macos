@@ -598,7 +598,7 @@ extension ViewModelsTests {
     @MainActor
     func testKnownErrorTextBecomesPlainWords() {
         XCTAssertEqual(
-            ConnectOnionRemoteError.chatFailure(forDescription: "The ConnectOnion agent is offline"),
+            ConnectOnionRemoteError.chatFailure(forDescription: "The agent is offline"),
             .agentOffline
         )
         XCTAssertEqual(
@@ -625,8 +625,8 @@ extension ViewModelsTests {
             appViewModel: appViewModel
         )
 
-        viewModel.handleIncomingEvent(.error("The ConnectOnion agent is offline"))
-        viewModel.handleIncomingEvent(.error("The ConnectOnion agent is offline"))
+        viewModel.handleIncomingEvent(.error("The agent is offline"))
+        viewModel.handleIncomingEvent(.error("The agent is offline"))
 
         XCTAssertEqual(viewModel.messages.count, 1, "the same notice twice in a row shows once")
         XCTAssertEqual(viewModel.messages.first?.role, .system)

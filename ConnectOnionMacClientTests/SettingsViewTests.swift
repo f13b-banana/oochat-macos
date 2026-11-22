@@ -33,7 +33,7 @@ final class SettingsViewTests: XCTestCase {
                 route: .relay,
                 remoteName: nil,
                 tools: [],
-                detail: "ConnectOnion relay"
+                detail: "Relay"
             ),
             offline.id: AgentConnectionSnapshot(
                 state: .offline,
@@ -79,18 +79,18 @@ final class SettingsViewTests: XCTestCase {
     }
 
     @MainActor
-    func testAppearanceSettingsRendersEveryMode() async {
-        for mode in AppearanceMode.allCases {
-            var selectedMode = mode
-            let view = AppearanceSettingsView(
-                appearanceMode: Binding(
-                    get: { selectedMode },
-                    set: { selectedMode = $0 }
-                )
-            )
-            render(view, width: 600, height: 100)
-            XCTAssertEqual(selectedMode, mode)
-        }
+    func testEachSettingsTabRenders() async {
+        render(GeneralSettingsView(), width: 700, height: 580)
+        render(LocalAgentsSettingsView(dockerRuntime: .shared, appViewModel: makeAppViewModel()), width: 700, height: 580)
+        render(AgentsSettingsView(appViewModel: makeAppViewModel()), width: 700, height: 580)
+    }
+
+    func testAgentRowStatusSaysHowTheAgentIsReached() {
+        let direct = AgentConnectionSnapshot(state: .online, route: .direct, remoteName: nil, tools: [], detail: nil)
+        let relay = AgentConnectionSnapshot(state: .online, route: .relay, remoteName: nil, tools: [], detail: nil)
+        XCTAssertEqual(AgentSettingsRow.statusLabel(for: direct), "Online \u{00B7} Direct")
+        XCTAssertEqual(AgentSettingsRow.statusLabel(for: relay), "Online \u{00B7} Relay")
+        XCTAssertEqual(AgentSettingsRow.statusLabel(for: nil), "Checking")
     }
 
     @MainActor
@@ -140,7 +140,6 @@ final class SettingsViewTests: XCTestCase {
         hoveredState.hoveredConfigId = primaryAgent.id
         hoveredState.hoveredSessionId = currentSession.id
         hoveredState.hoveredNewChat = true
-        hoveredState.hoveredSettings = true
         var editingAgentState = SidebarViewInitialState()
         editingAgentState.editingAgentId = primaryAgent.id
         editingAgentState.editingAgentName = "Renamed Agent"
@@ -170,14 +169,12 @@ final class SettingsViewTests: XCTestCase {
 
     @MainActor
     private func renderSettings(appViewModel: AppViewModel, width: CGFloat) {
-        var appearanceMode = AppearanceMode.system
         let view = SettingsView(
-            appearanceMode: Binding(
-                get: { appearanceMode },
-                set: { appearanceMode = $0 }
-            ),
             appViewModel: appViewModel,
-            onBack: {}
+            usageStore: UsageStore(
+                fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("usage-\(UUID().uuidString).json")
+            ),
+            identityStore: makeIdentityStore()
         )
         render(view, width: width, height: 760)
     }

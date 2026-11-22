@@ -32,7 +32,7 @@ final class ConnectOnionServiceTests: XCTestCase {
             XCTAssertFalse(service.isConnected)
             XCTAssertEqual(
                 service.connectionError,
-                "Direct API configurations are no longer supported. Connect to a hosted ConnectOnion agent instead."
+                "Direct API configurations are no longer supported. Connect to a hosted agent instead."
             )
         }
     }
@@ -65,7 +65,7 @@ final class ConnectOnionServiceTests: XCTestCase {
             XCTAssertFalse(service.isConnected)
             XCTAssertEqual(
                 service.connectionError,
-                "Enter a valid ConnectOnion 0x address or HTTP(S) Direct URL"
+                "Enter a valid 0x address or HTTP(S) Direct URL"
             )
         }
     }
@@ -167,7 +167,7 @@ final class ConnectOnionServiceTests: XCTestCase {
         await service.respondToAskUser("answer")
         await service.respondToApproval(.approveSession)
         await service.respondToPlanReview(.requestChanges("Revise"))
-        await service.respondToULWCheckpoint(.continueTenTurns)
+        await service.respondToULWCheckpoint(.continueTurns)
         await service.submitInviteCode("invite")
         await service.setExecutionMode(.safe)
 

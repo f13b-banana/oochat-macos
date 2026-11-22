@@ -511,9 +511,9 @@ extension ConnectOnionServiceTests {
         )
         XCTAssertTrue(viewModel.isStation)
 
-        viewModel.handleIncomingEvent(.error("The ConnectOnion agent is offline"))
+        viewModel.handleIncomingEvent(.error("The agent is offline"))
 
-        XCTAssertEqual(viewModel.interactionError, "The ConnectOnion agent is offline")
+        XCTAssertEqual(viewModel.interactionError, "The agent is offline")
         XCTAssertFalse(viewModel.messages.isEmpty)
     }
 

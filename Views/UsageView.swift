@@ -27,7 +27,6 @@ enum UsageValueFormatter {
 
 struct UsageView: View {
     @ObservedObject var store: UsageStore
-    let onBack: () -> Void
 
     @State private var selectedRange: UsageRange = .last7Days
     @State private var isConfirmingClear = false
@@ -41,17 +40,17 @@ struct UsageView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    header
                     introduction
 
                     if let storageError = store.storageError {
                         storageErrorBanner(storageError)
                     }
 
-                    UsageHeatmapView(snapshot: snapshot)
+                    // The period filters the totals and models under it; the year below always shows.
                     rangePicker
                     summaryCard(snapshot.totals)
                     modelCard(snapshot.models)
+                    UsageHeatmapView(snapshot: snapshot)
                     footer(
                         recordingSince: allTimeSnapshot.recordingSince,
                         canClear: allTimeSnapshot.totals.calls > 0
@@ -59,9 +58,7 @@ struct UsageView: View {
                     )
                 }
                 .frame(maxWidth: 1040, alignment: .leading)
-                .padding(.horizontal, 28)
-                .padding(.top, 24)
-                .padding(.bottom, 30)
+                .padding(24)
                 .frame(maxWidth: .infinity)
             }
         }
@@ -79,33 +76,8 @@ struct UsageView: View {
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .center) {
-            Button(action: onBack) {
-                Image(systemName: "arrow.left")
-                    .font(.system(size: AppFontSize.subheadline, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .frame(width: 28, height: 28)
-                    .background(AppPalette.surfaceMuted)
-                    .clipShape(Circle())
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
-            .help("Back")
-
-            Text("Usage")
-                .font(.system(size: AppFontSize.pageTitle, weight: .semibold))
-                .foregroundStyle(.primary)
-        }
-    }
-
     private var introduction: some View {
-        Text(
-            "Token usage recorded on this device, grouped by model. "
-                + "Usage is kept after you delete a conversation or agent because "
-                + "the tokens were already spent, and it never leaves your Mac."
-        )
+        Text("Tokens your agents used, by model, kept on this Mac even after a chat is deleted.")
         .font(.system(size: AppFontSize.body))
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)

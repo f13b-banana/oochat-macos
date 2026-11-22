@@ -131,17 +131,17 @@ nonisolated enum ConnectOnionRemoteError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidAgentTarget:
-            return "Enter a valid ConnectOnion 0x address or HTTP(S) Direct URL"
+            return "Enter a valid 0x address or HTTP(S) Direct URL"
         case .agentNotFound:
-            return "The ConnectOnion relay could not find this agent"
+            return "The relay could not find this agent"
         case .agentOffline:
-            return "The ConnectOnion agent is offline"
+            return "The agent is offline"
         case .invalidRelayResponse:
-            return "The ConnectOnion relay returned an invalid response"
+            return "The relay returned an invalid response"
         case .directEndpointUnavailable:
             return "The agent's direct endpoint is unavailable"
         case .invalidAgentInfo:
-            return "The agent endpoint did not return a matching ConnectOnion address"
+            return "The agent endpoint did not return a matching agent address"
         case .invalidProtocolMessage:
             return "The hosted agent returned an invalid protocol message"
         case .connectionClosed:

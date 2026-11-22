@@ -49,13 +49,34 @@ enum LocalAgentsSetting {
         }
         return configurations.contains(where: \.isOnThisMac)
     }
+
+    /// The Docker menu's toggle and the Local Agents tab both land here: save the choice, then start
+    /// the runtime or stop it. Stopping runs off the main thread, so the app doesn't freeze.
+    @MainActor
+    static func set(_ isOn: Bool, runtime: DockerRuntimeManager, in storage: UserDefaults = .standard) {
+        storage.set(isOn, forKey: storageKey)
+        Task {
+            if isOn {
+                await runtime.start()
+            } else {
+                await runtime.stop()
+            }
+        }
+    }
+
+    /// The toggle both places show. `stored` is nil until the toggle is first used.
+    @MainActor
+    static func binding(_ stored: Bool?, runtime: DockerRuntimeManager) -> Binding<Bool> {
+        Binding(
+            get: { stored ?? isOn() },
+            set: { set($0, runtime: runtime) }
+        )
+    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var managesDockerRuntime = false
     private let isRunningTests: () -> Bool
     private let runsLocalAgents: () -> Bool
-    private let startDockerRuntime: @MainActor () async -> Void
     private let stopDockerRuntime: () -> Void
 
     override convenience init() {
@@ -63,36 +84,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isRunningTests: {
                 ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
             },
-            startDockerRuntime: {
-                await DockerRuntimeManager.shared.start()
-            },
             stopDockerRuntime: {
                 DockerRuntimeManager.shared.stopSynchronously()
             }
         )
     }
 
+    /// Docker isn't started at launch: the first chat you open starts it, when local agents are on.
     init(
         isRunningTests: @escaping () -> Bool,
         runsLocalAgents: @escaping () -> Bool = { LocalAgentsSetting.isOn() },
-        startDockerRuntime: @escaping @MainActor () async -> Void,
         stopDockerRuntime: @escaping () -> Void
     ) {
         self.isRunningTests = isRunningTests
         self.runsLocalAgents = runsLocalAgents
-        self.startDockerRuntime = startDockerRuntime
         self.stopDockerRuntime = stopDockerRuntime
         super.init()
-    }
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        guard !isRunningTests(), runsLocalAgents() else {
-            return
-        }
-        managesDockerRuntime = true
-        Task { @MainActor in
-            await startDockerRuntime()
-        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(
@@ -101,9 +108,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
-    /// Also stops a runtime the Docker menu started after launch.
+    /// Quitting waits for the agents to stop. With nothing started it returns at once.
     func applicationWillTerminate(_ notification: Notification) {
-        if managesDockerRuntime || (!isRunningTests() && runsLocalAgents()) {
+        MainActor.assumeIsolated {
+            SecretPasteboard.clearPending()
+        }
+        if !isRunningTests() && runsLocalAgents() {
             stopDockerRuntime()
         }
     }
@@ -112,6 +122,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct ConnectOnionMacClientApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    /// Held here so the chat window and the Settings window share one set of agents and chats.
+    @StateObject private var appViewModel = AppViewModel()
+    @StateObject private var usageStore = UsageStore()
+    private let runNotifier = RunNotifier()
 
     init() {
         OOFonts.register()
@@ -119,12 +133,20 @@ struct ConnectOnionMacClientApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(appViewModel: appViewModel, usageStore: usageStore)
                 .frame(minWidth: 900, minHeight: 600)
+                .task {
+                    runNotifier.attach(to: appViewModel)
+                }
         }
         .commands {
             AppCommands()
             DockerRuntimeCommands(dockerRuntime: .shared)
+        }
+
+        // ⌘, and the rail's gear open this window.
+        Settings {
+            SettingsView(appViewModel: appViewModel, usageStore: usageStore)
         }
     }
 }
@@ -146,8 +168,8 @@ extension FocusedValues {
 struct AppCommands: Commands {
     @FocusedObject private var app: AppViewModel?
     @FocusedValue(\.chatMenu) private var chat: ChatMenuActions?
-    @AppStorage("isSidebarVisible") private var isSidebarVisible = true
-    @AppStorage("isControlCenterOpen") private var isControlCenterOpen = true
+    @AppStorage(LayoutStorageKey.sidebarVisible) private var isSidebarVisible = true
+    @AppStorage(LayoutStorageKey.controlCenterOpen) private var isControlCenterOpen = true
     @AppStorage(ChatFontSize.storageKey) private var fontSize = ChatFontSize.standard
 
     var body: some Commands {
@@ -200,7 +222,7 @@ struct AppCommands: Commands {
             .keyboardShortcut("s", modifiers: [.control, .command])
 
             Button(isControlCenterOpen ? "Hide Control Center" : "Show Control Center") {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withMotion(.easeInOut(duration: 0.2)) {
                     isControlCenterOpen.toggle()
                 }
             }
@@ -273,22 +295,7 @@ struct DockerRuntimeCommands: Commands {
     @AppStorage(LocalAgentsSetting.storageKey) private var runsLocalAgents: Bool?
 
     private var isRunningLocalAgents: Binding<Bool> {
-        Binding(
-            get: { runsLocalAgents ?? LocalAgentsSetting.isOn() },
-            set: { isOn in
-                runsLocalAgents = isOn
-                if isOn {
-                    Task {
-                        await dockerRuntime.start()
-                    }
-                } else {
-                    // The same teardown as on quit, but off the main thread so the app doesn't freeze.
-                    Task {
-                        await dockerRuntime.stop()
-                    }
-                }
-            }
-        )
+        LocalAgentsSetting.binding(runsLocalAgents, runtime: dockerRuntime)
     }
 
     var body: some Commands {
