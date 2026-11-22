@@ -80,6 +80,18 @@ final class BalanceViewTests: XCTestCase {
         XCTAssertEqual(pasteboard.string(forType: .string), "something else")
     }
 
+    // The timer can't run after quit, so quitting clears a secret that's still there.
+    @MainActor
+    func testQuitClearsASecretStillOnTheClipboard() {
+        let pasteboard = NSPasteboard(name: .init("BalanceViewTests.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+
+        SecretPasteboard.copy("seed words", to: pasteboard, clearAfter: .seconds(600))
+        SecretPasteboard.clearPending()
+        XCTAssertNil(pasteboard.string(forType: .string))
+        XCTAssertEqual(SecretPasteboard.copiedMessage, "Copied \u{00B7} clears in 60 s")
+    }
+
     @MainActor
     private func makeAppViewModel() -> AppViewModel {
         let suiteName = "BalanceViewTests.\(UUID().uuidString)"
@@ -99,8 +111,7 @@ final class BalanceViewTests: XCTestCase {
         let hostingView = NSHostingView(
             rootView: BalanceView(
                 appViewModel: makeAppViewModel(),
-                viewModel: viewModel,
-                onBack: {}
+                viewModel: viewModel
             )
                 .frame(width: 900, height: 360)
         )

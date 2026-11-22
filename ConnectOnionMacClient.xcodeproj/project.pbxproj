@@ -16,6 +16,8 @@
 		34E23F272FF7B7840067A29B /* host_agent.py in Resources */ = {isa = PBXBuildFile; fileRef = 34E23F262FF7B77C0067A29B /* host_agent.py */; };
 		34EE29F02FF546DC006464EB /* BalanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34EE29EF2FF546D1006464EB /* BalanceView.swift */; };
 		436E92B62FF506670078684E /* WalletService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 436E92B52FF506520078684E /* WalletService.swift */; };
+		AB1000010000000000000003 /* SecretPasteboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1000010000000000000004 /* SecretPasteboard.swift */; };
+		AB1000010000000000000001 /* RunNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1000010000000000000002 /* RunNotifier.swift */; };
 		8226EA2D30788EB80097ECBD /* ConnectOnionKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8226EA2C30788EB80097ECBD /* ConnectOnionKit */; };
 		82E31D61309889CF00559E2C /* AgentBalanceNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82E31D60309889C200559E2C /* AgentBalanceNotice.swift */; };
 		A10000013000000000000001 /* DockerRuntimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000033000000000000003 /* DockerRuntimeManager.swift */; };
@@ -27,7 +29,6 @@
 		AA0000022FEBF5F6009B8B1C /* ConnectOnionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A616252FEBF5F6009B8B1C /* ConnectOnionService.swift */; };
 		AA0000032FEBF5F6009B8B1C /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A616262FEBF5F6009B8B1C /* Models.swift */; };
 		AA0000042FEBF5F6009B8B1C /* ViewModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A616282FEBF5F6009B8B1C /* ViewModels.swift */; };
-		AA0000052FEBF5F6009B8B1C /* AgentSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A6162A2FEBF5F6009B8B1C /* AgentSettingsView.swift */; };
 		AA0000062FEBF5F6009B8B1C /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A6162B2FEBF5F6009B8B1C /* ChatView.swift */; };
 		AA0000072FEBF5F6009B8B1C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A6162C2FEBF5F6009B8B1C /* ContentView.swift */; };
 		AA0000082FEBF5F6009B8B1C /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A6162D2FEBF5F6009B8B1C /* SidebarView.swift */; };
@@ -50,7 +51,6 @@
 		F00000013000000000000001 /* Resources/Fonts in Resources */ = {isa = PBXBuildFile; fileRef = F00000023000000000000002 /* Resources/Fonts */; };
 		F10000013000000000000001 /* SettingsViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000023000000000000002 /* SettingsViewTests.swift */; };
 		F20000013000000000000001 /* BalanceViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000023000000000000002 /* BalanceViewTests.swift */; };
-		F30000013000000000000001 /* AgentSettingsViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000023000000000000002 /* AgentSettingsViewTests.swift */; };
 		F40000013000000000000001 /* ConnectOnionRemoteAgentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40000023000000000000002 /* ConnectOnionRemoteAgentTests.swift */; };
 		F50000013000000000000001 /* DockerRuntimeRobustnessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000023000000000000002 /* DockerRuntimeRobustnessTests.swift */; };
 		F60000013000000000000001 /* ConnectOnionServiceConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000023000000000000002 /* ConnectOnionServiceConnectionTests.swift */; };
@@ -120,7 +120,6 @@
 		34A616262FEBF5F6009B8B1C /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		34A616272FEBF5F6009B8B1C /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		34A616282FEBF5F6009B8B1C /* ViewModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModels.swift; sourceTree = "<group>"; };
-		34A6162A2FEBF5F6009B8B1C /* AgentSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSettingsView.swift; sourceTree = "<group>"; };
 		34A6162B2FEBF5F6009B8B1C /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		34A6162C2FEBF5F6009B8B1C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		34A6162D2FEBF5F6009B8B1C /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
@@ -128,6 +127,8 @@
 		34E23F262FF7B77C0067A29B /* host_agent.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = host_agent.py; sourceTree = "<group>"; };
 		34EE29EF2FF546D1006464EB /* BalanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BalanceView.swift; sourceTree = "<group>"; };
 		436E92B52FF506520078684E /* WalletService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletService.swift; sourceTree = "<group>"; };
+		AB1000010000000000000004 /* SecretPasteboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretPasteboard.swift; sourceTree = "<group>"; };
+		AB1000010000000000000002 /* RunNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunNotifier.swift; sourceTree = "<group>"; };
 		82E31D60309889C200559E2C /* AgentBalanceNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBalanceNotice.swift; sourceTree = "<group>"; };
 		A10000033000000000000003 /* DockerRuntimeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockerRuntimeManager.swift; sourceTree = "<group>"; };
 		A10000043000000000000004 /* docker-compose.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "docker-compose.yml"; sourceTree = "<group>"; };
@@ -151,7 +152,6 @@
 		F00000023000000000000002 /* Resources/Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/Fonts; sourceTree = "<group>"; };
 		F10000023000000000000002 /* SettingsViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewTests.swift; sourceTree = "<group>"; };
 		F20000023000000000000002 /* BalanceViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BalanceViewTests.swift; sourceTree = "<group>"; };
-		F30000023000000000000002 /* AgentSettingsViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSettingsViewTests.swift; sourceTree = "<group>"; };
 		F40000023000000000000002 /* ConnectOnionRemoteAgentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionRemoteAgentTests.swift; sourceTree = "<group>"; };
 		F50000023000000000000002 /* DockerRuntimeRobustnessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockerRuntimeRobustnessTests.swift; sourceTree = "<group>"; };
 		F60000023000000000000002 /* ConnectOnionServiceConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOnionServiceConnectionTests.swift; sourceTree = "<group>"; };
@@ -272,7 +272,6 @@
 				D3B60E333084E87D0012C501 /* IncompatibleAgentView.swift */,
 				34EE29EF2FF546D1006464EB /* BalanceView.swift */,
 				34E0FED12FF3936100E36B46 /* SettingsView.swift */,
-				34A6162A2FEBF5F6009B8B1C /* AgentSettingsView.swift */,
 				34A6162B2FEBF5F6009B8B1C /* ChatView.swift */,
 				KA0000000000000000000001 /* ChatFormatting.swift */,
 				KA0100000000000000000001 /* MessageView.swift */,
@@ -326,7 +325,6 @@
 				KG1200000000000000000001 /* ToolPresentationTests.swift */,
 				F10000023000000000000002 /* SettingsViewTests.swift */,
 				F20000023000000000000002 /* BalanceViewTests.swift */,
-				F30000023000000000000002 /* AgentSettingsViewTests.swift */,
 				F40000023000000000000002 /* ConnectOnionRemoteAgentTests.swift */,
 				KE0100000000000000000004 /* ConnectOnionRemoteAgentWorkRoomTests.swift */,
 				A90000023000000000000002 /* ConnectOnionLiveHostTests.swift */,
@@ -372,6 +370,8 @@
 			children = (
 				A10000033000000000000003 /* DockerRuntimeManager.swift */,
 				436E92B52FF506520078684E /* WalletService.swift */,
+				AB1000010000000000000004 /* SecretPasteboard.swift */,
+				AB1000010000000000000002 /* RunNotifier.swift */,
 				1C59CDE4300DE2F200E8EC9B /* VoiceInputService.swift */,
 				G10000023000000000000002 /* UsageStore.swift */,
 				H10000023000000000000002 /* GeneratedArtifactStore.swift */,
@@ -522,8 +522,9 @@
 				KF0100000000000000000002 /* ChatViewModel+WorkRoom.swift in Sources */,
 				KF0200000000000000000001 /* BalanceViewModel.swift in Sources */,
 				1C3C632A3004F1D600BD248D /* DesignSystem.swift in Sources */,
-				AA0000052FEBF5F6009B8B1C /* AgentSettingsView.swift in Sources */,
 				436E92B62FF506670078684E /* WalletService.swift in Sources */,
+				AB1000010000000000000003 /* SecretPasteboard.swift in Sources */,
+				AB1000010000000000000001 /* RunNotifier.swift in Sources */,
 				AA0000062FEBF5F6009B8B1C /* ChatView.swift in Sources */,
 				KB0000000000000000000001 /* ChatFormatting.swift in Sources */,
 				KB0100000000000000000001 /* MessageView.swift in Sources */,
@@ -572,7 +573,6 @@
 				D3963B91309A16A7008EAA02 /* DashboardSkillActionTests.swift in Sources */,
 				F10000013000000000000001 /* SettingsViewTests.swift in Sources */,
 				F20000013000000000000001 /* BalanceViewTests.swift in Sources */,
-				F30000013000000000000001 /* AgentSettingsViewTests.swift in Sources */,
 				F40000013000000000000001 /* ConnectOnionRemoteAgentTests.swift in Sources */,
 				KF0100000000000000000004 /* ConnectOnionRemoteAgentWorkRoomTests.swift in Sources */,
 				A90000013000000000000001 /* ConnectOnionLiveHostTests.swift in Sources */,

@@ -4,13 +4,13 @@ import AppKit
 
 /// Owns app-level navigation, layout, appearance, and Docker runtime feedback.
 struct ContentView: View {
-    @StateObject private var appViewModel = AppViewModel()
-    @StateObject private var usageStore: UsageStore
+    @ObservedObject var appViewModel: AppViewModel
+    @ObservedObject var usageStore: UsageStore
     @ObservedObject private var dockerRuntime = DockerRuntimeManager.shared
 
     @AppStorage("isDarkMode") private var isDarkMode = false
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
-    @AppStorage("isSidebarVisible") private var isSidebarVisible = true
+    @AppStorage(LayoutStorageKey.sidebarVisible) private var isSidebarVisible = true
     @AppStorage("agentPaneWidth") private var agentPaneWidth = AgentPaneWidth.initial
     /// The Docker failure that was closed. A different failure shows again.
     @State private var dismissedDockerFailure: DockerStartupFailure?
@@ -20,8 +20,9 @@ struct ContentView: View {
     private let conversationMaxWidth: CGFloat = 768
     private let conversationHorizontalPadding: CGFloat = 24
 
-    init() {
-        _usageStore = StateObject(wrappedValue: UsageStore())
+    init(appViewModel: AppViewModel, usageStore: UsageStore) {
+        self.appViewModel = appViewModel
+        self.usageStore = usageStore
 
         // One-time migration from the legacy Dark Mode toggle: an explicit
         // choice (the key only exists once the toggle was used) is kept;
@@ -74,17 +75,11 @@ struct ContentView: View {
         .background(SidebarToggleAccessory(action: toggleSidebar))
         // The menu bar's commands act on this window's chats.
         .focusedSceneObject(appViewModel)
-        .alert("Restart all local agents?", isPresented: $dockerRuntime.isConfirmingRestart) {
-            Button("Cancel", role: .cancel) {}
-                .keyboardShortcut(.defaultAction)
-            Button("Restart", role: .destructive) {
-                Task {
-                    await dockerRuntime.applyConfigurationAndRestart()
-                }
-            }
-        } message: {
-            Text("Any running response will stop.")
-        }
+        .restartAgentsConfirmation(
+            isPresented: $dockerRuntime.isConfirmingRestart,
+            dockerRuntime: dockerRuntime,
+            appViewModel: appViewModel
+        )
         .alert(
             "Delete chat?",
             isPresented: Binding(
@@ -105,7 +100,7 @@ struct ContentView: View {
                 appViewModel.sessionPendingDeletion = nil
             }
         } message: { session in
-            Text("Deleting \u{201C}\(session.title)\u{201D} also deletes its messages and keeps its server record hidden on this Mac.")
+            Text("\u{201C}\(session.title)\u{201D} and its messages will be removed from this Mac. Nothing is deleted where the agent runs.")
         }
     }
 
@@ -249,23 +244,10 @@ struct ContentView: View {
 
     @ViewBuilder
     private func detailView(conversationWidth: CGFloat) -> some View {
-        if appViewModel.configurations.isEmpty || isHomeLinking, !isSettingsPage {
+        if appViewModel.configurations.isEmpty || isHomeLinking {
             AgentConnectHomeView(appViewModel: appViewModel, isLinking: $isHomeLinking)
         } else {
             selectedDetailView(conversationWidth: conversationWidth)
-        }
-    }
-
-    /// Pages opened from Settings, which show even with no agents instead of the first-run home screen.
-    /// Choose Agent counts only when Settings' Manage Agents opened it; the sidebar's Add agent wants home.
-    private var isSettingsPage: Bool {
-        switch appViewModel.selection {
-        case .settings, .usage, .balance, .identity:
-            return true
-        case .chooseAgent:
-            return appViewModel.previousSelection == .settings
-        case .session, .newConfiguration, .none:
-            return false
         }
     }
 
@@ -290,31 +272,8 @@ struct ContentView: View {
                 EmptyDetailView(systemImage: "questionmark.circle", message: "Session not found")
             }
 
-        case .newConfiguration:
-            AgentSettingsView(appViewModel: appViewModel)
-
         case .chooseAgent:
             ChooseAgentView(appViewModel: appViewModel)
-
-        case .usage:
-            UsageView(store: usageStore) {
-                appViewModel.selection = appViewModel.previousSelection
-            }
-
-        case .settings:
-            SettingsView(appearanceMode: $appearanceMode, appViewModel: appViewModel) {
-                appViewModel.selection = appViewModel.previousSelection
-            }
-
-        case .balance:
-            BalanceView(appViewModel: appViewModel) {
-                appViewModel.selection = appViewModel.previousSelection
-            }
-
-        case .identity:
-            IdentityView(appViewModel: appViewModel) {
-                appViewModel.selection = appViewModel.previousSelection
-            }
 
         case .none:
             // Home, the logo at the top of the rail: the start screen, to talk to any agent.
@@ -784,7 +743,7 @@ private struct EmptyDetailView: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(appViewModel: AppViewModel(), usageStore: UsageStore())
 }
 
 private extension View {

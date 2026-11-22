@@ -83,14 +83,22 @@ struct ExecutionFlowView: View {
     }
 }
 
-/// Shown while the agent works on a reply with no trace yet: how long you've waited, and Stop after a while.
-private struct WaitingForAgentRow: View {
-    /// Stop only appears after this long, so a quick reply doesn't flash a button.
+/// Shown while the agent works on a reply with no trace yet: how long you've waited, and Cancel after a while.
+struct WaitingForAgentRow: View {
+    /// Cancel only appears after this long, so a quick reply doesn't flash a button.
     static let stopDelay = 10
+
+    /// "Waiting for my-agent · 4 s", then "Still waiting · 12 s" once Cancel is offered.
+    static func status(agentName: String, seconds: Int) -> String {
+        seconds >= stopDelay
+            ? "Still waiting \u{00B7} \(seconds) s"
+            : "Waiting for \(agentName) \u{00B7} \(seconds) s"
+    }
 
     let startedAt: Date
     let agentName: String
     let onStop: (() -> Void)?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -100,23 +108,27 @@ private struct WaitingForAgentRow: View {
                 Image(systemName: "progress.indicator")
                     .font(.system(size: AppFontSize.body))
                     .foregroundStyle(OOColor.primary)
-                    .symbolEffect(.variableColor.iterative)
+                    // Still with Reduce Motion on; the seconds still count up.
+                    .symbolEffect(.variableColor.iterative, isActive: !reduceMotion)
                     .accessibilityHidden(true)
 
-                Text("Waiting for \(agentName) · \(seconds) s")
+                Text(Self.status(agentName: agentName, seconds: seconds))
                     .font(.system(size: AppFontSize.body))
                     .foregroundStyle(OOColor.inkSecondary)
                     .contentTransition(.numericText())
 
                 if seconds >= Self.stopDelay, let onStop {
-                    Button("Stop", action: onStop)
+                    Text("\u{00B7}")
+                        .foregroundStyle(OOColor.inkTertiary)
+                        .accessibilityHidden(true)
+                    Button("Cancel", action: onStop)
                         .buttonStyle(.plain)
                         .font(.system(size: AppFontSize.body))
                         .foregroundStyle(OOColor.inkSecondary)
                         .underline()
-                        .frame(minHeight: 28)
+                        .frame(minHeight: macMinimumTarget)
                         .contentShape(Rectangle())
-                        .help("Stop \(agentName)")
+                        .help("Stop waiting for \(agentName)")
                 }
             }
             .frame(maxWidth: 920, alignment: .leading)

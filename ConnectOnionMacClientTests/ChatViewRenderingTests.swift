@@ -513,5 +513,16 @@ extension ChatViewTests {
         let scrolledUp = ChatScrollPosition(contentHeight: 2_000, visibleBottom: 1_600)
         XCTAssertFalse(scrolledUp.grewWhileFollowing(from: following))
         XCTAssertFalse(grown.grewWhileFollowing(from: scrolledUp))
+
+        // Streaming: the reply grows in the same frame you scroll up. That's you scrolling.
+        let grownWhileScrollingUp = ChatScrollPosition(contentHeight: 2_100, visibleBottom: 1_880)
+        XCTAssertFalse(grownWhileScrollingUp.grewWhileFollowing(from: following))
+        XCTAssertFalse(grownWhileScrollingUp.isAtBottom)
+    }
+
+    // After ten seconds the row says "Still waiting" and offers Cancel.
+    func testWaitingRowSaysStillWaitingAfterTenSeconds() {
+        XCTAssertEqual(WaitingForAgentRow.status(agentName: "my-agent", seconds: 4), "Waiting for my-agent \u{00B7} 4 s")
+        XCTAssertEqual(WaitingForAgentRow.status(agentName: "my-agent", seconds: 12), "Still waiting \u{00B7} 12 s")
     }
 }

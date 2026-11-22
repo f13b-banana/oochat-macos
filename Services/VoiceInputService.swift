@@ -14,10 +14,10 @@ enum ConnectOnionTranscriptionError: LocalizedError {
                 + "Start Docker Desktop, wait for the agent to come online, then try again."
         case .transcriptionFailed(let detail):
             return detail.isEmpty
-                ? "ConnectOnion could not transcribe the recording."
-                : "ConnectOnion transcription failed: \(detail)"
+                ? "oo-chat could not transcribe the recording."
+                : "oo-chat transcription failed: \(detail)"
         case .invalidResponse:
-            return "ConnectOnion returned an invalid transcription response."
+            return "oo-chat returned an invalid transcription response."
         }
     }
 }
@@ -165,7 +165,7 @@ final class VoiceInputService: ObservableObject {
                 guard !Task.isCancelled else { return }
                 self.transcript = text
                 if text.isEmpty {
-                    self.errorMessage = "ConnectOnion did not detect any speech."
+                    self.errorMessage = "oo-chat did not detect any speech."
                 }
             } catch {
                 guard !Task.isCancelled else { return }

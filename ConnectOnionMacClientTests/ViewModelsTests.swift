@@ -632,6 +632,33 @@ final class ViewModelsTests: XCTestCase {
         XCTAssertTrue(viewModel.findMessages(for: UUID()).isEmpty)
     }
 
+    // Same wording as the iOS notifications.
+    func testRunNotifierWordingAndBadgeCount() {
+        XCTAssertEqual(RunNotifier.preview(of: "  First line  \nsecond"), "First line")
+        XCTAssertEqual(RunNotifier.preview(of: "\n"), "Finished.")
+        XCTAssertEqual(RunNotifier.preview(of: String(repeating: "a", count: 120)).count, 100)
+
+        let request = ConnectOnionApprovalRequest(
+            id: "approval-1",
+            tool: "bash",
+            arguments: .object(["command": .string("ls")]),
+            description: nil,
+            batchRemaining: []
+        )
+        let chatID = UUID()
+        let content = RunNotifier.approvalContent(chatID: chatID, agentName: "my-agent", request: request)
+        XCTAssertEqual(content.title, "my-agent needs your approval")
+        XCTAssertEqual(content.categoryIdentifier, RunNotifier.approvalCategory)
+        XCTAssertEqual(content.userInfo[RunNotifier.approvalKey] as? String, "approval-1")
+
+        // Each chat once; working doesn't count, and a chat that's gone doesn't either.
+        let waiting = UUID()
+        let failed = UUID()
+        let working = UUID()
+        let gone = UUID()
+        let statuses: [UUID: SidebarChatStatus] = [waiting: .approval, failed: .notSent, working: .working, gone: .reply]
+        XCTAssertEqual(RunNotifier.attentionCount(statuses: statuses, chatIDs: [waiting, failed, working]), 2)
+    }
 }
 
 private final class ViewModelHistoryURLProtocol: URLProtocol, @unchecked Sendable {

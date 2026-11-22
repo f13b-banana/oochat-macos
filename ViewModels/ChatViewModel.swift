@@ -250,6 +250,7 @@ class ChatViewModel: ObservableObject {
                 artifacts: consumePendingArtifacts(),
                 artifactWarnings: consumePendingArtifactWarnings()
             )
+            appViewModel.runNotifier?.runDidFinish(chatID: session.id, agentName: configuration.name, reply: text)
 
         case .usage(let usage):
             pendingUsage = usage
@@ -309,6 +310,7 @@ class ChatViewModel: ObservableObject {
         case .approvalRequired(let request):
             pendingInteraction = .approval(request)
             interactionError = nil
+            appViewModel.runNotifier?.approvalDidArrive(chatID: session.id, agentName: configuration.name, request: request)
 
         case .onboardingRequired(let request):
             pendingInteraction = .onboarding(request)
@@ -518,7 +520,7 @@ class ChatViewModel: ObservableObject {
 
     var fileInputHelpText: String {
         if configuration.connectionType != .byAddress {
-            return "File upload is available for hosted ConnectOnion agents"
+            return "File upload is available for hosted agents"
         }
         if service.hostedFileInputCapabilities?.isSupported == false {
             return "This agent does not accept file uploads"
@@ -637,6 +639,8 @@ extension ChatViewModel {
             return
         }
 
+        // Runs can take minutes, so this is when notifications start to matter.
+        appViewModel.runNotifier?.askPermissionOnce()
         let filesToSend = pendingAttachments
         let textToSend = trimmedInput.isEmpty
             ? "Please read and summarize the attached file(s)."
@@ -763,6 +767,7 @@ extension ChatViewModel {
             markTool(toolID, as: .skipped)
         }
         if case .approval(let request)? = pendingInteraction {
+            appViewModel.runNotifier?.removeApprovalNotification(approvalID: request.id)
             let recordedDecision: ApprovalRecordDecision
             switch decision {
             case .approveOnce:
@@ -968,7 +973,7 @@ extension ChatViewModel {
     ) -> String? {
         guard !attachments.isEmpty else { return nil }
         guard configuration.connectionType == .byAddress else {
-            return "File upload is only available for hosted ConnectOnion agents"
+            return "File upload is only available for hosted agents"
         }
 
         let limits = currentFileInputCapabilities

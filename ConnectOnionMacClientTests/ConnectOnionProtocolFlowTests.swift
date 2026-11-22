@@ -283,7 +283,7 @@ extension ConnectOnionRemoteAgentTests {
                     }
                 case .ulwCheckpointRequired:
                     await recordProtocolFailure(recorder) {
-                        try await client.respondToULWCheckpoint(.continueTenTurns)
+                        try await client.respondToULWCheckpoint(.continueTurns)
                     }
                 case .onboardingRequired:
                     await recordProtocolFailure(recorder) {

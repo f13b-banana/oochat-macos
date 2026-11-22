@@ -218,7 +218,7 @@ extension ConnectOnionServiceTests {
         )
         XCTAssertEqual(
             viewModel.agentConnectionSnapshots[configuration.id]?.detail,
-            "The ConnectOnion agent is offline"
+            "The agent is offline"
         )
     }
 

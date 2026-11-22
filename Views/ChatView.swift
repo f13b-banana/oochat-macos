@@ -9,7 +9,7 @@ struct ChatView: View {
     let historySelectionRevision: Int
 
     @AppStorage(ChatFontSize.storageKey) private var chatFontSize = ChatFontSize.standard
-    @AppStorage("isControlCenterOpen") private var isControlCenterOpen = true
+    @AppStorage(LayoutStorageKey.controlCenterOpen) private var isControlCenterOpen = true
     @AppStorage("controlCenterPaneWidth") private var paneWidth = Double(ControlCenterPaneWidth.initial)
     @State private var dragStartWidth: Double?
     @State private var detailWidth: CGFloat = 0
@@ -46,6 +46,7 @@ struct ChatView: View {
             // The agent pane reads this chat's Work Rooms, skills and Control Center from here.
             .onAppear {
                 viewModel.appViewModel.activeChat = viewModel
+                startLocalRuntimeIfNeeded()
             }
             .onDisappear {
                 if viewModel.appViewModel.activeChat === viewModel {
@@ -54,6 +55,20 @@ struct ChatView: View {
             }
             // The menu bar's Chat and View commands act on this chat.
             .focusedSceneValue(\.chatMenu, menuActions)
+    }
+
+    /// Docker starts with the first chat you open, not at launch. Local agents added by their 0x
+    /// address look remote, so any chat counts while local agents are on.
+    private func startLocalRuntimeIfNeeded() {
+        guard LocalAgentsSetting.isOn() else {
+            return
+        }
+        let agent = viewModel.configuration
+        let appViewModel = viewModel.appViewModel
+        Task {
+            await DockerRuntimeManager.shared.start()
+            appViewModel.refreshAgentStatus(for: agent)
+        }
     }
 
     @ViewBuilder
@@ -120,7 +135,7 @@ struct ChatView: View {
                     skills: viewModel.agentProfile?.skills,
                     onRunSkill: viewModel.runControlCenterSkill,
                     onCollapse: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withMotion(.easeInOut(duration: 0.2)) {
                         isControlCenterOpen = false
                     }
                 })
@@ -137,7 +152,7 @@ struct ChatView: View {
             ToolbarItem(placement: .primaryAction) {
                 if viewModel.dashboard != nil {
                     OOControlCenterButton(isOpen: isControlCenterOpen) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withMotion(.easeInOut(duration: 0.2)) {
                             isControlCenterOpen.toggle()
                         }
                     }
@@ -368,7 +383,7 @@ struct ChatView: View {
                         return
                     }
 
-                    withAnimation {
+                    withMotion {
                         proxy.scrollTo(
                             filteredSkills[newIndex].name,
                             anchor: .center
@@ -580,7 +595,7 @@ struct ChatView: View {
                     }
                     .overlay(alignment: .bottom) {
                         JumpToLatestButton(isShown: !isAtBottom, hasUnseenLatest: hasUnseenLatest) {
-                            withAnimation {
+                            withMotion {
                                 proxy.scrollTo("bottomOfChat", anchor: .bottom)
                             }
                         }
@@ -604,7 +619,7 @@ struct ChatView: View {
                     }
                     .onChange(of: viewModel.pendingInteraction) { _, interaction in
                         if interaction != nil, pendingApproval == nil {
-                            withAnimation {
+                            withMotion {
                                 proxy.scrollTo("hostedInteraction", anchor: .bottom)
                             }
                         }
@@ -615,8 +630,8 @@ struct ChatView: View {
                     guard let request else {
                         return
                     }
-                    withAnimation {
-                        if request.toTop {
+                    withMotion {
+                        if request.target == .top {
                             proxy.scrollTo("topOfChat", anchor: .top)
                         } else {
                             proxy.scrollTo("bottomOfChat", anchor: .bottom)
@@ -670,7 +685,7 @@ struct ChatView: View {
                 }
 
                 if viewModel.voiceInputService.isTranscribing {
-                    Label("Transcribing with ConnectOnion…", systemImage: "waveform")
+                    Label("Transcribing…", systemImage: "waveform")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -765,12 +780,9 @@ struct ChatView: View {
                             selectedSkillIndex = 0
                             return .handled
                         }
-                        // With nothing to close, Esc in the composer stops the reply, as ⌘. does.
-                        guard canStopResponse else {
-                            return .ignored
-                        }
-                        viewModel.interruptAgent()
-                        return .handled
+                        // Esc never stops a reply from here: one stray key while you type a follow-up
+                        // shouldn't end the run. Chat ▸ Stop Response (⌘.) does that.
+                        return .ignored
                     }
 
                     Button(action: viewModel.toggleVoiceInput) {
@@ -928,7 +940,7 @@ struct ChatView: View {
 
     private var voiceInputHelpText: String {
         if viewModel.voiceInputService.isTranscribing {
-            return "Transcribing with ConnectOnion"
+            return "Transcribing"
         }
         return viewModel.voiceInputService.isRecording
             ? "Stop and transcribe voice input"
@@ -957,8 +969,8 @@ struct ChatView: View {
         ChatMenuActions(
             canStop: canStopResponse,
             stop: viewModel.interruptAgent,
-            scrollToTop: { scrollRequest = ChatScrollRequest(toTop: true) },
-            scrollToLatest: { scrollRequest = ChatScrollRequest(toTop: false) },
+            scrollToTop: { scrollRequest = ChatScrollRequest(target: .top) },
+            scrollToLatest: { scrollRequest = ChatScrollRequest(target: .latest) },
             hasControlCenter: viewModel.dashboard != nil && viewModel.openWorkRoomID == nil
         )
     }
@@ -966,8 +978,18 @@ struct ChatView: View {
 
 /// One press of Scroll to Top or Scroll to Latest. The id makes a second press of the same one count.
 struct ChatScrollRequest: Equatable {
+    enum Target {
+        case top, latest
+    }
+
     let id = UUID()
-    let toTop: Bool
+    let target: Target
+}
+
+/// The window layout choices the menu bar, the toolbar and the panes all read and write.
+enum LayoutStorageKey {
+    static let sidebarVisible = "isSidebarVisible"
+    static let controlCenterOpen = "isControlCenterOpen"
 }
 
 /// The chat text size behind View ▸ Bigger, Smaller and Actual Size.
@@ -999,7 +1021,7 @@ extension ChatView {
             proxy.scrollTo("bottomOfChat", anchor: .bottom)
             return
         }
-        withAnimation {
+        withMotion {
             proxy.scrollTo("bottomOfChat", anchor: .bottom)
         }
     }
@@ -1071,6 +1093,7 @@ struct ChatScrollPosition: Equatable {
 
     let isAtBottom: Bool
     let contentHeight: CGFloat
+    let visibleBottom: CGFloat
 
     init(_ geometry: ScrollGeometry) {
         self.init(contentHeight: geometry.contentSize.height, visibleBottom: geometry.visibleRect.maxY)
@@ -1079,12 +1102,15 @@ struct ChatScrollPosition: Equatable {
     /// The same, from plain numbers, so it can be tested without a scroll view.
     init(contentHeight: CGFloat, visibleBottom: CGFloat) {
         self.contentHeight = contentHeight
+        self.visibleBottom = visibleBottom
         isAtBottom = contentHeight - visibleBottom <= Self.followThreshold
     }
 
     /// New content was added below while you were at the bottom, rather than you scrolling away.
+    /// While a reply streams, one frame can both grow the content and carry your scroll up, so a
+    /// view that moved up counts as you scrolling, whatever else grew.
     func grewWhileFollowing(from old: ChatScrollPosition) -> Bool {
-        old.isAtBottom && contentHeight > old.contentHeight
+        old.isAtBottom && contentHeight > old.contentHeight && visibleBottom >= old.visibleBottom - 1
     }
 }
 
@@ -1107,10 +1133,10 @@ private struct JumpToLatestButton: View {
                         }
                         Label("Latest", systemImage: "arrow.down")
                     }
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: AppFontSize.caption, weight: .semibold))
                     .foregroundStyle(OOColor.ink)
-                    .padding(.horizontal, 12)
-                    .frame(height: 28)
+                    .padding(.horizontal, OOSpace.medium)
+                    .frame(height: macMinimumTarget)
                     .background(OOColor.paper, in: Capsule())
                     .overlay(Capsule().stroke(OOColor.hairline, lineWidth: 1))
                     .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
@@ -1119,7 +1145,7 @@ private struct JumpToLatestButton: View {
                 .buttonStyle(.plain)
                 .help("Jump to latest (⌘↓)")
                 .accessibilityLabel(hasUnseenLatest ? "Jump to latest, new content" : "Jump to latest")
-                .padding(.bottom, 12)
+                .padding(.bottom, OOSpace.medium)
                 .transition(reduceMotion ? .opacity : .scale(scale: 0.8).combined(with: .opacity))
             }
         }

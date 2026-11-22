@@ -6,7 +6,6 @@ struct SidebarViewInitialState {
     var hoveredConfigId: UUID?
     var hoveredSessionId: UUID?
     var hoveredNewChat = false
-    var hoveredSettings = false
     var searchText = ""
     var editingAgentId: UUID?
     var editingAgentName = ""
@@ -129,28 +128,7 @@ struct SidebarView: View {
                 finishRenamingSession()
             }
         }
-        .alert(
-            "Remove agent?",
-            isPresented: Binding(
-                get: { agentPendingDeletion != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        agentPendingDeletion = nil
-                    }
-                }
-            ),
-            presenting: agentPendingDeletion
-        ) { configuration in
-            Button("Cancel", role: .cancel) {
-                agentPendingDeletion = nil
-            }
-            Button("Remove", role: .destructive) {
-                appViewModel.deleteConfiguration(configuration)
-                agentPendingDeletion = nil
-            }
-        } message: { configuration in
-            Text("Removing \(configuration.name) also deletes its chats and messages.")
-        }
+        .removeAgentConfirmation($agentPendingDeletion, appViewModel: appViewModel)
     }
 
     /// The agent the pane is about: the open chat's, else the one picked on the rail, else the first.
@@ -777,6 +755,38 @@ extension SidebarView {
     }
 }
 
+extension View {
+    /// The one "Remove agent?" confirmation, shared by the pane header's ⋯ menu and the Agents tab
+    /// in Settings.
+    func removeAgentConfirmation(
+        _ pending: Binding<GeneralAgentConfiguration?>,
+        appViewModel: AppViewModel
+    ) -> some View {
+        alert(
+            "Remove agent?",
+            isPresented: Binding(
+                get: { pending.wrappedValue != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pending.wrappedValue = nil
+                    }
+                }
+            ),
+            presenting: pending.wrappedValue
+        ) { configuration in
+            Button("Cancel", role: .cancel) {
+                pending.wrappedValue = nil
+            }
+            Button("Remove agent", role: .destructive) {
+                appViewModel.deleteConfiguration(configuration)
+                pending.wrappedValue = nil
+            }
+        } message: { configuration in
+            Text("\(configuration.name) and its chats will be removed from this Mac. Nothing is deleted where the agent runs.")
+        }
+    }
+}
+
 /// The top of the agent pane: the agent's name (click it to rename in place; Return saves, Esc or
 /// a click elsewhere keeps the old name), whether it's online, and its address, which copies on
 /// click. ⋯ holds the rest.
@@ -903,7 +913,7 @@ struct AgentPaneHeader: View {
                 Button("Copy Address", action: copyAddress)
             }
             Divider()
-            Button("Remove Agent…", role: .destructive, action: onRemove)
+            Button("Remove agent\u{2026}", role: .destructive, action: onRemove)
         } label: {
             Image(systemName: "ellipsis")
                 .font(OOSidebarMetrics.titleFont.weight(.medium))
@@ -995,7 +1005,7 @@ struct AgentPaneHeader: View {
 /// come from that chat's connection.
 struct AgentChatSections: View {
     @ObservedObject var chat: ChatViewModel
-    @AppStorage("isControlCenterOpen") private var isControlCenterOpen = true
+    @AppStorage(LayoutStorageKey.controlCenterOpen) private var isControlCenterOpen = true
     @State private var isRoomsExpanded = true
     /// Folded at first: skills are occasional, chats are the point.
     @State private var isSkillsExpanded = false
@@ -1123,6 +1133,7 @@ struct AgentChatSections: View {
 struct AgentRail: View {
     @ObservedObject var appViewModel: AppViewModel
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openSettings) private var openSettings
     @State private var draggingAgentID: UUID?
 
     static let width: CGFloat = 64
@@ -1131,7 +1142,7 @@ struct AgentRail: View {
 
     var body: some View {
         let statuses = appViewModel.sidebarStatuses
-        // Nothing is selected on the rail while Home, Add agent or Settings is open.
+        // Nothing is selected on the rail while Home or Add agent is open.
         let selectedID: UUID? = {
             if case .session = appViewModel.selection {
                 return appViewModel.paneAgent?.id
@@ -1173,7 +1184,7 @@ struct AgentRail: View {
                     // Right under the last agent, where a new one will appear.
                     AgentRailItem(
                         title: "Add agent",
-                        isSelected: appViewModel.selection == .chooseAgent || appViewModel.selection == .newConfiguration,
+                        isSelected: appViewModel.selection == .chooseAgent,
                         action: appViewModel.showAddAgent
                     ) {
                         railIcon("plus")
@@ -1196,7 +1207,8 @@ struct AgentRail: View {
                 AgentRailItem(title: "Refresh chats from each agent", isSelected: false, action: refreshChats) {
                     railIcon("arrow.clockwise")
                 }
-                AgentRailItem(title: "Settings", isSelected: appViewModel.selection == .settings, action: openSettings) {
+                // Opens the Settings window, the same one as ⌘,.
+                AgentRailItem(title: "Settings", isSelected: false, action: openSettings.callAsFunction) {
                     railIcon("gearshape")
                 }
             }
@@ -1229,13 +1241,6 @@ struct AgentRail: View {
 
     private func showHome() {
         appViewModel.selection = nil
-    }
-
-    private func openSettings() {
-        if appViewModel.selection != .settings {
-            appViewModel.previousSelection = appViewModel.selection
-        }
-        appViewModel.selection = .settings
     }
 }
 

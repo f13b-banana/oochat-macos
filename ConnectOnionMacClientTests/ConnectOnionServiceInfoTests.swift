@@ -192,7 +192,7 @@ extension ConnectOnionServiceTests {
             .message
         XCTAssertTrue((revision["message"] as? String)?.contains("Add tests") == true)
 
-        let continueMessage = ConnectOnionULWCheckpointDecision.continueTenTurns.message
+        let continueMessage = ConnectOnionULWCheckpointDecision.continueTurns.message
         XCTAssertEqual(continueMessage["action"] as? String, "continue")
         XCTAssertEqual(continueMessage["turns"] as? Int, 10)
 

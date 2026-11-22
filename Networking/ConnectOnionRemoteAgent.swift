@@ -1217,7 +1217,7 @@ extension ConnectOnionRemoteAgentClient {
     private func connectionDetail(
         for endpoint: ConnectOnionResolvedEndpoint
     ) -> String {
-        endpoint.isDirect ? "Direct endpoint" : "ConnectOnion relay"
+        endpoint.isDirect ? "Direct endpoint" : "Relay"
     }
 }
 

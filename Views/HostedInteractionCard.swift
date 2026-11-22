@@ -33,7 +33,6 @@ struct HostedInteractionCard: View {
     @State private var showsMoreActions = false
     @State private var hoveredAskOption: String?
     /// The command runs past the well's 200 pt, so its bottom edge fades to say there's more.
-    @State private var valueHasMoreBelow = false
 
     init(
         viewModel: ChatViewModel,
@@ -260,7 +259,7 @@ struct HostedInteractionCard: View {
 
                 // What is being approved, shown in full rather than behind a disclosure.
                 if let command = request.commandText {
-                    approvalValueBlock(label: "COMMAND", value: command)
+                    ApprovalValueBlock(label: "COMMAND", value: command)
                 }
                 if let details = Self.argumentLines(arguments, hidingCommand: request.commandText != nil) {
                     approvalArguments(details)
@@ -306,8 +305,8 @@ struct HostedInteractionCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(OOSpace.medium)
         }
-        .frame(maxHeight: 200)
-        .background(approvalWell)
+        .frame(maxHeight: ApprovalValueBlock.maxHeight)
+        .background(Self.approvalWell)
     }
 
     /// Allow once is the one green button. Skip tool and More sit beside it.
@@ -320,6 +319,8 @@ struct HostedInteractionCard: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.ooPrimary)
+            // Return allows once and Esc skips, unless the trust question below has the keys.
+            .keyboardShortcut(isConfirmingTrust ? nil : .defaultAction)
 
             Button {
                 viewModel.submitApproval(.rejectSoft(feedback: feedback))
@@ -329,6 +330,7 @@ struct HostedInteractionCard: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.ooSecondary)
+            .keyboardShortcut(isConfirmingTrust ? nil : .cancelAction)
 
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) {
@@ -397,7 +399,7 @@ struct HostedInteractionCard: View {
                 }
             }
             .padding(OOSpace.medium)
-            .background(approvalWell)
+            .background(Self.approvalWell)
         } else {
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) {
@@ -439,47 +441,13 @@ struct HostedInteractionCard: View {
     }
 
     /// The white, thin-bordered box the command, the raw values and the trust question sit in.
-    private var approvalWell: some View {
+    static var approvalWell: some View {
         RoundedRectangle(cornerRadius: OORadius.large, style: .continuous)
             .fill(OOColor.paper)
             .overlay(
                 RoundedRectangle(cornerRadius: OORadius.large, style: .continuous)
                     .stroke(OOColor.hairline, lineWidth: 1)
             )
-    }
-
-    private func approvalValueBlock(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label)
-                .font(AppTypography.mono(size: AppFontSize.footnote, weight: .semibold))
-                .foregroundStyle(OOColor.inkSecondary)
-            // Show the whole value so the user sees everything they approve.
-            ScrollView(.vertical) {
-                Text(value)
-                    .font(AppTypography.mono(size: AppFontSize.caption))
-                    .foregroundStyle(OOColor.ink)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 200)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentSize.height - geometry.visibleRect.maxY > 1
-            } action: { _, hasMore in
-                valueHasMoreBelow = hasMore
-            }
-            .mask {
-                LinearGradient(
-                    stops: [
-                        .init(color: .black, location: valueHasMoreBelow ? 0.75 : 1),
-                        .init(color: .black.opacity(valueHasMoreBelow ? 0.1 : 1), location: 1)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
-        }
-        .padding(OOSpace.medium)
-        .background(approvalWell)
     }
 
     @ViewBuilder
@@ -531,7 +499,7 @@ struct HostedInteractionCard: View {
         ) {
             HStack {
                 Button("Continue \(AgentExecutionMode.acceptTurns) turns") {
-                    viewModel.submitULWCheckpoint(.continueTenTurns)
+                    viewModel.submitULWCheckpoint(.continueTurns)
                 }
                 .buttonStyle(.appPrimary)
                 .help("Full access ends after these turns.")
@@ -606,3 +574,48 @@ struct HostedInteractionCard: View {
 }
 
 /// Presents agent status, capabilities, and starter prompts before the first message.
+
+/// One labelled value on the approval card, shown in full and scrollable when long. Each block keeps
+/// its own "more below" state, so two blocks never fight over one fade.
+private struct ApprovalValueBlock: View {
+    /// Tall enough for a long command without pushing the buttons off the card.
+    static let maxHeight: CGFloat = 200
+
+    let label: String
+    let value: String
+    @State private var hasMoreBelow = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(AppTypography.mono(size: AppFontSize.footnote, weight: .semibold))
+                .foregroundStyle(OOColor.inkSecondary)
+            // Show the whole value so the user sees everything they approve.
+            ScrollView(.vertical) {
+                Text(value)
+                    .font(AppTypography.mono(size: AppFontSize.caption))
+                    .foregroundStyle(OOColor.ink)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: Self.maxHeight)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height - geometry.visibleRect.maxY > 1
+            } action: { _, hasMore in
+                hasMoreBelow = hasMore
+            }
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: hasMoreBelow ? 0.75 : 1),
+                        .init(color: .black.opacity(hasMoreBelow ? 0.1 : 1), location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        }
+        .padding(OOSpace.medium)
+        .background(HostedInteractionCard.approvalWell)
+    }
+}

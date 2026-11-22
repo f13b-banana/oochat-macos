@@ -16,7 +16,6 @@ enum AgentStatusTrigger {
 /// attached to the right agent as configurations come and go.
 @MainActor
 class AppViewModel: ObservableObject {
-    @Published var previousSelection: NavigationItem?
     /// Configurations currently believed reachable, updated by both status
     /// probes and live chat traffic.
     @Published var connectedConfigurationIds: Set<UUID> = []
@@ -59,6 +58,8 @@ class AppViewModel: ObservableObject {
     @Published var focusedAgentID: UUID?
     /// The open chat's view model, so the agent pane can show its Work Rooms, skills and Control Center.
     @Published var activeChat: ChatViewModel?
+    /// Set by the app; nil in tests, so tests never post notifications or ask for permission.
+    var runNotifier: RunNotifier?
     /// Bumped on every explicit history selection so views can re-focus the
     /// session even when the selection value itself did not change.
     @Published private(set) var sessionSelectionRevision = 0
@@ -852,7 +853,7 @@ class AppViewModel: ObservableObject {
             route: endpoint.isDirect ? .direct : .relay,
             remoteName: endpoint.info?.name,
             tools: endpoint.info?.tools ?? [],
-            detail: endpoint.isDirect ? "Direct endpoint" : "ConnectOnion relay",
+            detail: endpoint.isDirect ? "Direct endpoint" : "Relay",
             model: endpoint.info?.model,
             trust: endpoint.info?.trust,
             version: endpoint.info?.version
@@ -1308,9 +1309,6 @@ extension AppViewModel {
 
     /// ⇧⌘N, and the rail's Add agent.
     func showAddAgent() {
-        if selection != .newConfiguration && selection != .chooseAgent {
-            previousSelection = selection
-        }
         selection = .chooseAgent
     }
 
