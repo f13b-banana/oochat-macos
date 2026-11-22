@@ -193,6 +193,29 @@ nonisolated enum ExecutionStatus: String, Codable, Hashable, Sendable {
     case running
     case done
     case error
+    /// A tool still running when its run ended: Stop, a lost connection, or a stopped batch.
+    case interrupted
+    /// A tool you chose Skip for on its approval, so it never ran.
+    case skipped
+
+    /// A status this build doesn't know, saved by a newer one, reads as done, so the rest of the
+    /// saved traces still load instead of the whole list failing to decode.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = ExecutionStatus(rawValue: raw) ?? .done
+    }
+
+    /// What a tool row shows, in the words both apps share. Awaiting approval isn't stored:
+    /// it's a running tool whose approval card is open (ChatViewModel.toolAwaitingApprovalID).
+    var rowState: ToolRowState {
+        switch self {
+        case .running: return .running
+        case .done: return .completed
+        case .error: return .failed
+        case .interrupted: return .interrupted
+        case .skipped: return .skipped
+        }
+    }
 }
 
 /// The host's opening acknowledgement, shown before any tool runs.
@@ -329,6 +352,10 @@ extension ExecutionItem {
             }
             current.result = current.result ?? existing.result
             current.timingMS = current.timingMS ?? existing.timingMS
+            // A skipped tool comes back as an error ("User rejected…"); it stays Skipped.
+            if existing.status == .skipped {
+                current.status = .skipped
+            }
             return .toolCall(current)
 
         case (.approval, .approval):
@@ -542,6 +569,8 @@ extension ToolCallExecutionItem {
             base = category == .shell ? "EXIT CODE \(shellExitCode ?? 1)" : "ERROR"
         case .done:
             base = category == .shell ? "EXIT CODE \(shellExitCode ?? 0)" : "DONE"
+        case .interrupted, .skipped:
+            base = status.rowState.label.uppercased()
         }
         if let timing, !timing.isEmpty {
             return "\(base) (\(timing))"
@@ -570,9 +599,10 @@ extension ToolCallExecutionItem {
         status == .done && (shellExitCode ?? 0) == 0
     }
 
-    /// Finished but not cleanly: an error status or a non-zero exit code.
+    /// Failed: an error status, or done with a non-zero exit code. Skipped and Interrupted are
+    /// your own choices, not failures, so they don't count (their grey mark says what happened).
     var needsAttention: Bool {
-        status != .running && !isCleanlyFinished
+        status == .error || (status == .done && !isCleanlyFinished)
     }
 
     private var fileArgument: String? {

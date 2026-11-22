@@ -533,6 +533,7 @@ struct ChatView: View {
                                 .id("bottomOfChat")
                         }
                         .padding()
+                        .environment(\.toolAwaitingApprovalID, viewModel.toolAwaitingApprovalID)
                     }
                     .scrollContentBackground(.hidden)
                     .onAppear {
