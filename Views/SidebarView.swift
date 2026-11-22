@@ -13,7 +13,6 @@ struct SidebarViewInitialState {
     var editingSessionId: UUID?
     var editingSessionTitle = ""
     var agentPendingDeletion: GeneralAgentConfiguration?
-    var sessionPendingDeletion: ChatSession?
 
     init() {
         hoveredConfigId = nil
@@ -21,7 +20,6 @@ struct SidebarViewInitialState {
         editingAgentId = nil
         editingSessionId = nil
         agentPendingDeletion = nil
-        sessionPendingDeletion = nil
     }
 }
 
@@ -42,7 +40,6 @@ struct SidebarView: View {
     @State private var editingSessionId: UUID?
     @State private var editingSessionTitle: String
     @State private var agentPendingDeletion: GeneralAgentConfiguration?
-    @State private var sessionPendingDeletion: ChatSession?
     @State private var showsAllChats = false
     @State private var isChatsExpanded = true
     /// Where ↑/↓ has moved to, shown at once; the chat opens a moment later, so holding ↓
@@ -62,7 +59,6 @@ struct SidebarView: View {
         _editingSessionId = State(initialValue: initialState.editingSessionId)
         _editingSessionTitle = State(initialValue: initialState.editingSessionTitle)
         _agentPendingDeletion = State(initialValue: initialState.agentPendingDeletion)
-        _sessionPendingDeletion = State(initialValue: initialState.sessionPendingDeletion)
     }
 
     private var searchQuery: String {
@@ -154,28 +150,6 @@ struct SidebarView: View {
             }
         } message: { configuration in
             Text("Removing \(configuration.name) also deletes its chats and messages.")
-        }
-        .alert(
-            "Delete chat?",
-            isPresented: Binding(
-                get: { sessionPendingDeletion != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        sessionPendingDeletion = nil
-                    }
-                }
-            ),
-            presenting: sessionPendingDeletion
-        ) { session in
-            Button("Cancel", role: .cancel) {
-                sessionPendingDeletion = nil
-            }
-            Button("Delete", role: .destructive) {
-                appViewModel.deleteSession(session)
-                sessionPendingDeletion = nil
-            }
-        } message: { session in
-            Text("Deleting \u{201C}\(session.title)\u{201D} also deletes its messages and keeps its server record hidden on this Mac.")
         }
     }
 
@@ -614,7 +588,7 @@ private extension SidebarView {
         }
         Divider()
         Button("Delete Chat…", role: .destructive) {
-            sessionPendingDeletion = session
+            appViewModel.sessionPendingDeletion = session
         }
     }
 
@@ -1200,7 +1174,7 @@ struct AgentRail: View {
                     AgentRailItem(
                         title: "Add agent",
                         isSelected: appViewModel.selection == .chooseAgent || appViewModel.selection == .newConfiguration,
-                        action: showConnectAgent
+                        action: appViewModel.showAddAgent
                     ) {
                         railIcon("plus")
                     }
@@ -1255,13 +1229,6 @@ struct AgentRail: View {
 
     private func showHome() {
         appViewModel.selection = nil
-    }
-
-    private func showConnectAgent() {
-        if appViewModel.selection != .newConfiguration && appViewModel.selection != .chooseAgent {
-            appViewModel.previousSelection = appViewModel.selection
-        }
-        appViewModel.selection = .chooseAgent
     }
 
     private func openSettings() {

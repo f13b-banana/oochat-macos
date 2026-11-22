@@ -500,9 +500,7 @@ final class WalletServiceTests: XCTestCase {
         let configuration = GeneralAgentConfiguration(
             name: "Dictation Agent",
             connectionType: .byAddress,
-            addressConfiguration: nil,
-            avatarTextColorHex: "#FFFFFF",
-            avatarBackgroundColorHex: "#123456"
+            addressConfiguration: nil
         )
         let session = ChatSession(agentConfigId: configuration.id, title: "Chat")
         let chat = ChatViewModel(

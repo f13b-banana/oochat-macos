@@ -65,10 +65,15 @@ class AppViewModel: ObservableObject {
     /// Sessions that no longer resolve to a live agent configuration and could
     /// not be reconciled by their stable identity.
     @Published private(set) var orphanedSessions: [ChatSession] = []
+    /// The chat waiting on "Delete chat?", from the sidebar or Chat ▸ Delete….
+    @Published var sessionPendingDeletion: ChatSession?
+    /// Bumped by Chat ▸ Rename…; the toolbar's chat name turns into a field.
+    @Published private(set) var renameChatRequests = 0
     /// Per-agent History Restore outcome; absent until the first attempt.
     @Published private(set) var historyRestoreStates: [UUID: HistoryRestoreState] = [:]
 
-    private let configKey = "saved_configurations"
+    static let configurationsStorageKey = "saved_configurations"
+    private let configKey = AppViewModel.configurationsStorageKey
     private let lastSelectedSessionKey = "last_selected_session"
     private let sessionKey = "saved_sessions"
     private let messageKey = "saved_messages"
@@ -418,19 +423,6 @@ class AppViewModel: ObservableObject {
         awaitingReportedName.remove(effectiveConfig.id)
         createNewSession(for: effectiveConfig)
         reconcileSessions()
-    }
-
-    func updateAgentAvatar(
-        _ configuration: GeneralAgentConfiguration,
-        textColorHex: String?,
-        backgroundColorHex: String?
-    ) {
-        guard let index = configurations.firstIndex(where: { $0.id == configuration.id }) else {
-            return
-        }
-
-        configurations[index].avatarTextColorHex = textColorHex
-        configurations[index].avatarBackgroundColorHex = backgroundColorHex
     }
 
     /// Adds an agent from a pasted address or URL, rejecting targets that fail
@@ -1290,5 +1282,39 @@ extension AppViewModel {
     var visibleSessions: [ChatSession] {
         let sessionIDsWithMessages = Set(messages.map { $0.sessionId })
         return sessions.filter { !$0.isTombstone && (sessionIDsWithMessages.contains($0.id) || hasMessages($0)) }
+    }
+}
+
+/// What the menu bar, the toolbar and the sidebar share, so each command has one owner.
+extension AppViewModel {
+    /// The open chat, if a chat is open.
+    var selectedSession: ChatSession? {
+        guard case .session(let id) = selection else {
+            return nil
+        }
+        return sessions.first { $0.id == id }
+    }
+
+    /// ⌘N, and the agent pane's New chat: a chat with the agent the pane shows, whether or not
+    /// the pane is open. With no agent yet it opens Add Agent instead.
+    func startNewChat() {
+        guard let agent = paneAgent else {
+            showAddAgent()
+            return
+        }
+        focusedAgentID = agent.id
+        createNewSession(for: agent)
+    }
+
+    /// ⇧⌘N, and the rail's Add agent.
+    func showAddAgent() {
+        if selection != .newConfiguration && selection != .chooseAgent {
+            previousSelection = selection
+        }
+        selection = .chooseAgent
+    }
+
+    func requestRenameChat() {
+        renameChatRequests += 1
     }
 }

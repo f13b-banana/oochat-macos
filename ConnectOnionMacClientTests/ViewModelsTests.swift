@@ -449,7 +449,7 @@ final class ViewModelsTests: XCTestCase {
     }
 
     @MainActor
-    func testAvatarConnectionAndSessionDateUpdates() async {
+    func testConnectionAndSessionDateUpdates() async {
         let viewModel = makeViewModel()
         let configuration = makeHostedConfiguration()
         var session = ChatSession(agentConfigId: configuration.id, title: "Chat")
@@ -457,16 +457,9 @@ final class ViewModelsTests: XCTestCase {
         viewModel.configurations = [configuration]
         viewModel.sessions = [session]
 
-        viewModel.updateAgentAvatar(
-            configuration,
-            textColorHex: "#FFFFFF",
-            backgroundColorHex: "#123456"
-        )
         viewModel.setAgentConnected(configuration, isConnected: true)
         viewModel.updateSessionDate(session)
 
-        XCTAssertEqual(viewModel.configurations[0].avatarTextColorHex, "#FFFFFF")
-        XCTAssertEqual(viewModel.configurations[0].avatarBackgroundColorHex, "#123456")
         XCTAssertTrue(viewModel.isAgentConnected(configuration))
         XCTAssertGreaterThan(viewModel.sessions[0].updatedAt, session.updatedAt)
 

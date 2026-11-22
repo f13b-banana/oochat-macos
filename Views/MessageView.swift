@@ -97,11 +97,9 @@ struct MessageView: View {
                     min(availableWidth, conversationWidth) * 0.8
                 }
             } else if message.role == .agent {
-                AgentAvatarView(
+                OOAvatarTile(
                     name: agentConfiguration.name,
-                    textColorHex: agentConfiguration.avatarTextColorHex,
-                    backgroundColorHex: agentConfiguration.avatarBackgroundColorHex,
-                    size: agentAvatarSize
+                    address: agentConfiguration.addressConfiguration?.agentAddress
                 )
 
                 VStack(alignment: .leading, spacing: 10) {

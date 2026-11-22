@@ -311,33 +311,28 @@ extension ConnectOnionServiceTests {
         XCTAssertEqual(decoded, message)
     }
 
-    func testAgentAvatarColorsAreBackwardCompatibleAndCodable() throws {
-        let legacyJSON = """
+    // Agents saved while avatars had their own colours still load; the colours are dropped on the next save.
+    func testOldAvatarColoursAreIgnored() throws {
+        let savedJSON = """
         {
           "id": "\(UUID().uuidString)",
           "name": "Legacy Agent",
           "connectionType": "byAddress",
           "addressConfiguration": {
             "agentAddress": "0x\(String(repeating: "ab", count: 32))"
-          }
+          },
+          "avatarTextColorHex": "#112233",
+          "avatarBackgroundColorHex": "#AABBCC"
         }
         """
-        let legacy = try JSONDecoder().decode(
+        let saved = try JSONDecoder().decode(
             GeneralAgentConfiguration.self,
-            from: Data(legacyJSON.utf8)
+            from: Data(savedJSON.utf8)
         )
-        XCTAssertNil(legacy.avatarTextColorHex)
-        XCTAssertNil(legacy.avatarBackgroundColorHex)
+        XCTAssertEqual(saved.name, "Legacy Agent")
 
-        var customized = legacy
-        customized.avatarTextColorHex = "#112233"
-        customized.avatarBackgroundColorHex = "#AABBCC"
-
-        let decoded = try JSONDecoder().decode(
-            GeneralAgentConfiguration.self,
-            from: JSONEncoder().encode(customized)
-        )
-        XCTAssertEqual(decoded, customized)
+        let resaved = try XCTUnwrap(String(bytes: JSONEncoder().encode(saved), encoding: .utf8))
+        XCTAssertFalse(resaved.contains("avatar"))
     }
 
     func testEd25519SignatureMatchesConnectOnionCanonicalJSON() throws {

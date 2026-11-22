@@ -12,6 +12,8 @@ struct ContentView: View {
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
     @AppStorage("isSidebarVisible") private var isSidebarVisible = true
     @AppStorage("agentPaneWidth") private var agentPaneWidth = AgentPaneWidth.initial
+    /// The Docker failure that was closed. A different failure shows again.
+    @State private var dismissedDockerFailure: DockerStartupFailure?
     /// A link from the home screen adds the giver's agents before its sheet is done, so home stays up until then.
     @State private var isHomeLinking = false
 
@@ -52,19 +54,10 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .overlay(alignment: .top) {
+            // A top inset, so the chat starts below the banner.
+            .safeAreaInset(edge: .top, spacing: 0) {
                 dockerRuntimeBanner
             }
-        }
-        .background {
-            // ⌘N starts a chat with the pane's agent whether or not the pane is showing.
-            Button("New Chat", action: startNewChat)
-                .keyboardShortcut("n", modifiers: .command)
-                .hidden()
-            // ⌘F shows the pane first if it's hidden, then opens its search.
-            Button("Search Chats", action: searchChats)
-                .keyboardShortcut("f", modifiers: .command)
-                .hidden()
         }
         .tint(AppPalette.primaryAction)
         .onChange(of: appearanceMode, initial: true) { _, mode in
@@ -79,10 +72,40 @@ struct ContentView: View {
         .chatToolbar(breadcrumb: breadcrumb)
         // Pinned beside the traffic lights, so it doesn't move as the sidebar opens and closes.
         .background(SidebarToggleAccessory(action: toggleSidebar))
-        .background {
-            Button("Toggle Sidebar", action: toggleSidebar)
-                .keyboardShortcut("s", modifiers: [.control, .command])
-                .hidden()
+        // The menu bar's commands act on this window's chats.
+        .focusedSceneObject(appViewModel)
+        .alert("Restart all local agents?", isPresented: $dockerRuntime.isConfirmingRestart) {
+            Button("Cancel", role: .cancel) {}
+                .keyboardShortcut(.defaultAction)
+            Button("Restart", role: .destructive) {
+                Task {
+                    await dockerRuntime.applyConfigurationAndRestart()
+                }
+            }
+        } message: {
+            Text("Any running response will stop.")
+        }
+        .alert(
+            "Delete chat?",
+            isPresented: Binding(
+                get: { appViewModel.sessionPendingDeletion != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        appViewModel.sessionPendingDeletion = nil
+                    }
+                }
+            ),
+            presenting: appViewModel.sessionPendingDeletion
+        ) { session in
+            Button("Cancel", role: .cancel) {
+                appViewModel.sessionPendingDeletion = nil
+            }
+            Button("Delete", role: .destructive) {
+                appViewModel.deleteSession(session)
+                appViewModel.sessionPendingDeletion = nil
+            }
+        } message: { session in
+            Text("Deleting \u{201C}\(session.title)\u{201D} also deletes its messages and keeps its server record hidden on this Mac.")
         }
     }
 
@@ -94,31 +117,13 @@ struct ContentView: View {
     }
 
     /// Shows or hides the agent pane at once; the rail stays, as Discord's server list does.
+    /// View ▸ Hide Sidebar (⌃⌘S) does the same through its own copy of `isSidebarVisible`.
     private func toggleSidebar() {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             isSidebarVisible.toggle()
         }
-    }
-
-    private func searchChats() {
-        if !isSidebarVisible {
-            toggleSidebar()
-        }
-        // Next turn, so a pane that was hidden is there to hear it.
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .agentPaneSearch, object: nil)
-        }
-    }
-
-    private func startNewChat() {
-        guard let agent = appViewModel.paneAgent else {
-            appViewModel.selection = .chooseAgent
-            return
-        }
-        appViewModel.focusedAgentID = agent.id
-        appViewModel.createNewSession(for: agent)
     }
 
     /// The open chat and its agent, for the toolbar's "agent / chat".
@@ -147,17 +152,32 @@ struct ContentView: View {
             .clipShape(Capsule())
             .padding(.top, 10)
 
-        case .failed(let failure):
+        case .failed(let failure) where failure != dismissedDockerFailure:
             HStack(spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(AppPalette.error)
                 Text(failure.message)
                     .font(.system(size: AppFontSize.footnote, weight: .medium))
                     .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
                 failureActions(for: failure)
+                Button {
+                    dismissedDockerFailure = failure
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: AppFontSize.footnote, weight: .semibold))
+                        .foregroundStyle(OOColor.inkSecondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help("Close")
+                .accessibilityLabel("Close Docker message")
             }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 40)
+            .padding(.leading, 14)
+            .padding(.trailing, 6)
+            .padding(.vertical, 6)
+            .frame(minHeight: 44)
             .background(.ultraThinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .padding(.horizontal, 20)
@@ -888,6 +908,9 @@ struct ChatBreadcrumb: View {
         }
         .onChange(of: session.id) {
             cancel()
+        }
+        .onChange(of: appViewModel.renameChatRequests) {
+            startEditing(.chat, from: session.title)
         }
         .onDisappear {
             stopWatchingClicks()

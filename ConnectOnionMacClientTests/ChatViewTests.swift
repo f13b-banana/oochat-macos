@@ -606,34 +606,16 @@ final class ChatViewTests: XCTestCase {
     }
 
     @MainActor
-    func testChatViewRendersDropTargetAndHandlesFontShortcuts() {
-        let viewModel = makeViewModel()
-        render(viewModel, isFileDropTargeted: true)
+    func testChatViewRendersDropTarget() {
+        render(makeViewModel(), isFileDropTargeted: true)
+    }
 
-        let chatView = ChatView(
-            viewModel: viewModel,
-            conversationWidth: 720
-        )
-        let plainEvent = keyEvent(characters: "a", modifiers: [])
-        let unknownCommand = keyEvent(characters: "x", modifiers: [.command])
-
-        XCTAssertTrue(chatView.handleKeyDown(plainEvent) === plainEvent)
-        XCTAssertNil(
-            chatView.handleKeyDown(
-                keyEvent(characters: "=", modifiers: [.command])
-            )
-        )
-        XCTAssertNil(
-            chatView.handleKeyDown(
-                keyEvent(characters: "-", modifiers: [.command])
-            )
-        )
-        XCTAssertNil(
-            chatView.handleKeyDown(
-                keyEvent(characters: "0", modifiers: [.command])
-            )
-        )
-        XCTAssertTrue(chatView.handleKeyDown(unknownCommand) === unknownCommand)
+    // View ▸ Bigger, Smaller and Actual Size step by one point and stop at the ends.
+    func testChatFontSizeStepsAndStopsAtTheEnds() {
+        XCTAssertEqual(ChatFontSize.bigger(ChatFontSize.standard), 16)
+        XCTAssertEqual(ChatFontSize.smaller(ChatFontSize.standard), 14)
+        XCTAssertEqual(ChatFontSize.bigger(ChatFontSize.range.upperBound), ChatFontSize.range.upperBound)
+        XCTAssertEqual(ChatFontSize.smaller(ChatFontSize.range.lowerBound), ChatFontSize.range.lowerBound)
     }
 
     @MainActor
