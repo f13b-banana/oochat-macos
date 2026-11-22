@@ -367,4 +367,6 @@ nonisolated enum ConnectOnionTransportEvent: Sendable {
     case error(String)
     /// The host refused the protocol version (-32010). Show the Incompatible screen, do not retry.
     case incompatible(OIPHandshake.Incompatibility)
+    /// The newest DASHBOARD_SNAPSHOT
+    case dashboard(OIPDashboard)
 }

@@ -455,3 +455,58 @@ final class ConnectOnionRemoteAgentTests: XCTestCase {
     }
 
 }
+
+extension ConnectOnionRemoteAgentTests {
+    func testDefaultSocketAcceptsTheHostsLargestMessage() throws {
+        let socketURL = try XCTUnwrap(URL(string: "wss://agent.test/ws"))
+        let task = URLSession.shared.webSocketTask(with: socketURL)
+        defer { task.cancel() }
+        XCTAssertEqual(
+            task.maximumMessageSize,
+            1_048_576,
+            "URLSession's default, which a large snapshot would exceed"
+        )
+        let made = ConnectOnionRemoteAgentClient.defaultWebSocket(urlSession: .shared)(socketURL)
+        let configured = try XCTUnwrap(made as? URLSessionWebSocketTask)
+        defer { configured.cancel() }
+        XCTAssertEqual(configured.maximumMessageSize, OIPDashboard.socketMessageBytes)
+    }
+
+    func testDashboardSnapshotsReachTheChatAndAnOversizedOneIsTooLarge() async throws {
+        let address = makeAddress("a5")
+        let resolver = makeResolver { request in
+            (
+                makeHTTPResponse(for: request, statusCode: 200),
+                try makeJSONData(["name": "Dashboard Agent", "address": address])
+            )
+        }
+        let oversized = String(repeating: "a", count: OIPDashboard.clientCapBytes + 1)
+        let socket = try ScriptedWebSocketTask(events: [
+            ["type": "CONNECTED", "status": "connected", "session_id": "dashboard-session"],
+            ["type": "DASHBOARD_SNAPSHOT", "html": "<h1>Hi</h1>"],
+            ["type": "DASHBOARD_SNAPSHOT", "html": oversized],
+            ["type": "OUTPUT", "result": "done"]
+        ])
+        let client = ConnectOnionRemoteAgentClient(
+            configuredTarget: "https://agent.test",
+            conversationID: nil,
+            resolver: resolver,
+            identityStore: makeEphemeralIdentityStore(),
+            webSocketFactory: { _ in socket },
+            sleep: { _ in }
+        )
+        let recorder = RemoteProtocolRecorder()
+        let output = try await client.send(
+            prompt: "Show me",
+            onUpdate: { await recorder.record($0) },
+            onEvent: { await recorder.record($0) }
+        )
+
+        XCTAssertEqual(output, "done", "a page over the cap must not end the run")
+
+        let events = await recorder.snapshot().events
+
+        XCTAssertTrue(events.contains("dashboard:11"))
+        XCTAssertTrue(events.contains("dashboard_too_large:\(OIPDashboard.clientCapBytes + 1)"))
+    }
+}

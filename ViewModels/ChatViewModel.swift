@@ -20,6 +20,8 @@ class ChatViewModel: ObservableObject {
     @Published var interactionError: String?
     @Published var recoveryStatus: String?
     @Published var incompatibility: OIPHandshake.Incompatibility?
+    /// The newest DASHBOARD_SNAPSHOT for this chat - adds the session checks.
+    @Published var dashboard: OIPDashboard?
     @Published var isSubmittingInteraction = false
     @Published private(set) var latestUsage: ChatUsageSummary?
     @Published private(set) var agentProfile: OIPAgentProfile?
@@ -235,6 +237,12 @@ class ChatViewModel: ObservableObject {
             recoveryStatus = nil
             finishActiveExecutionRun(with: .done)
             markOutstandingMessages(as: .sent)
+
+        case .dashboard(let dashboard):
+            // The host resends the page on every connect and reattach; an equal one changes nothing.
+            if self.dashboard != dashboard {
+                self.dashboard = dashboard
+            }
 
         case .incompatible(let incompatibility):
             pendingUsage = nil
@@ -458,6 +466,17 @@ extension ChatViewModel {
                 ? (filesToSend.first?.name ?? textToSend)
                 : inputText,
             clearsComposer: true
+        )
+    }
+
+    /// A Control Center button's `/skill args` line, already checked by the kit pane, goes out as a
+    /// normal, visible user turn (O Chat and Android do the same). The composer draft is left alone.
+    func runControlCenterSkill(_ message: String) {
+        guard pendingInteraction == nil else { return }
+        submitRequest(
+            ChatRetryRequest(displayContent: message, requestContent: message, files: []),
+            title: message,
+            clearsComposer: false
         )
     }
 
@@ -744,6 +763,7 @@ extension ChatViewModel {
         title: String?,
         clearsComposer: Bool
     ) {
+        guard !service.isInterruptRequested else { return }
         let summaries = request.files.map {
             ChatAttachmentSummary(name: $0.name, byteCount: $0.byteCount)
         }
